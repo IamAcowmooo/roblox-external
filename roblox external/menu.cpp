@@ -25,7 +25,7 @@ static const char* KeyName(int key) {
     if (key == VK_XBUTTON1) return "mouse4";
     if (key == VK_XBUTTON2) return "mouse5";
     LONG lp = (MapVirtualKeyA(key, 0) << 16) | 1;
-    char buf[64]{};
+    static char buf[64]{};
     if (GetKeyNameTextA(lp, buf, sizeof(buf)) > 0) return buf;
     return "???";
 }
@@ -72,47 +72,80 @@ static bool keybind_button(const char* label, int& key) {
 
 
 // ---------------------------------------------------------------
-// PHETAMINE-style widgets
+// frosted-glass widgets. every panel stays translucent so the game
+// shows through, with a soft top sheen, rounded corners and a single
+// accent colour driven by the ui page.
 // ---------------------------------------------------------------
 namespace ui {
-    static const ImU32 OFF_TRACK = IM_COL32(30, 30, 40, 255);
-    static const ImU32 TXT_MAIN  = IM_COL32(220, 220, 230, 255);
-    static const ImU32 TXT_DIM   = IM_COL32(160, 160, 170, 255);
+    static const ImU32 OFF_TRACK = IM_COL32(40, 43, 60, 255);
+    static const ImU32 TXT_MAIN  = IM_COL32(226, 229, 240, 255);
+    static const ImU32 TXT_DIM   = IM_COL32(140, 143, 156, 255);
     static const ImU32 WHITE     = IM_COL32(255, 255, 255, 255);
 
-    // element background, alpha driven by the ui transparency slider
-    inline ImU32 BgElem() {
-        float a = 1.0f - (ui_transparency / 100.0f);
-        return IM_COL32(12, 12, 18, (int)(200.0f * a));
+    // uniform metrics so every row lines up
+    static constexpr float ROW_H     = 34.0f;
+    static constexpr float SLIDER_H  = 46.0f;
+    static constexpr float PAD_X     = 12.0f;
+    static constexpr float GAP       = 7.0f;
+    static constexpr float ROUND     = 9.0f;
+
+    // how much the glass lets through (driven by the transparency slider)
+    inline float GlassA() { return 1.0f - (ui_transparency / 100.0f); }
+
+    inline ImU32 Mix(ImU32 a, ImU32 b, float t) {
+        if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+        int ar = (a >> 0) & 0xFF, ag = (a >> 8) & 0xFF, ab = (a >> 16) & 0xFF, aa = (a >> 24) & 0xFF;
+        int br = (b >> 0) & 0xFF, bg = (b >> 8) & 0xFF, bb = (b >> 16) & 0xFF, ba = (b >> 24) & 0xFF;
+        int r = ar + (int)((br - ar) * t);
+        int g = ag + (int)((bg - ag) * t);
+        int bl = ab + (int)((bb - ab) * t);
+        int al = aa + (int)((ba - aa) * t);
+        return IM_COL32(r, g, bl, al);
     }
 
-    // live accent, driven by the ui page (so rainbow actually reaches every widget)
+    // live accent, driven by the ui page (so rainbow reaches every widget)
     inline ImU32 Accent(float alpha = 1.0f) {
         return IM_COL32((int)(ui_accent_color[0] * 255.0f),
                         (int)(ui_accent_color[1] * 255.0f),
                         (int)(ui_accent_color[2] * 255.0f),
                         (int)(alpha * 255.0f));
     }
+    inline ImU32 AccentLight(float alpha = 1.0f) {
+        return Mix(Accent(alpha), IM_COL32(255, 255, 255, (int)(alpha * 255.0f)), 0.34f);
+    }
     inline ImU32 AccentDeep(float alpha = 1.0f) {
-        return IM_COL32((int)(ui_accent_color[0] * 0.6f * 255.0f),
-                        (int)(ui_accent_color[1] * 0.6f * 255.0f),
-                        (int)(ui_accent_color[2] * 0.6f * 255.0f),
+        return IM_COL32((int)(ui_accent_color[0] * 0.60f * 255.0f),
+                        (int)(ui_accent_color[1] * 0.60f * 255.0f),
+                        (int)(ui_accent_color[2] * 0.60f * 255.0f),
                         (int)(alpha * 255.0f));
     }
 
-    // uniform metrics so every row lines up
-    static constexpr float ROW_H     = 34.0f;
-    static constexpr float SLIDER_H  = 46.0f;
-    static constexpr float PAD_X     = 12.0f;
-    static constexpr float GAP       = 6.0f;
+    // translucent element body
+    inline ImU32 PanelBase() { return IM_COL32(25, 28, 42, (int)(120.0f * GlassA())); }
 
-    // red accent bar + uppercase caption
+    // frosted panel: soft shadow + translucent fill + top sheen + hairline border
+    inline void GlassPanel(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r,
+                           ImU32 base, ImU32 border, bool shadow = false, float sheen = 6.0f) {
+        if (shadow)
+            d->AddShadowRect(a, b, IM_COL32(0, 0, 0, 110), 16.0f, ImVec2(0.0f, 4.0f), ImDrawFlags_None, r);
+        d->AddRectFilled(a, b, base, r);
+        float h = b.y - a.y;
+        if (h > 4.0f) {
+            d->AddRectFilled(a, ImVec2(b.x, a.y + h * 0.42f), IM_COL32(255, 255, 255, (int)sheen), r, ImDrawFlags_RoundCornersTop);
+            d->AddLine(ImVec2(a.x + r, a.y + 1.0f), ImVec2(b.x - r, a.y + 1.0f), IM_COL32(255, 255, 255, (int)(sheen * 3.0f)), 1.0f);
+        }
+        d->AddRect(a, b, border, r, 0, 1.0f);
+    }
+
+    // section header: accent bar + uppercase caption + faint rule
     inline void Section(const char* text) {
-        ImGui::Dummy(ImVec2(0, 4));
+        ImGui::Dummy(ImVec2(0, 6));
         ImVec2 p = ImGui::GetCursorScreenPos();
         float h = ImGui::GetTextLineHeight();
+        float full = ImGui::GetContentRegionAvail().x;
         ImDrawList* d = ImGui::GetWindowDrawList();
-        d->AddRectFilled(ImVec2(p.x, p.y + 1), ImVec2(p.x + 3, p.y + h - 1), Accent());
+
+        d->AddRectFilled(ImVec2(p.x, p.y + 2), ImVec2(p.x + 3, p.y + h - 2), Accent());
 
         char up[128];
         size_t i = 0;
@@ -121,39 +154,59 @@ namespace ui {
         up[i] = '\0';
 
         ImGui::SetCursorScreenPos(ImVec2(p.x + 12, p.y));
-        ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.98f, 1.0f), "%s", up);
-        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::TextColored(ImVec4(0.93f, 0.94f, 0.98f, 1.0f), "%s", up);
+
+        float tx = p.x + 12.0f + ImGui::CalcTextSize(up).x + 10.0f;
+        if (full - tx > 10.0f)
+            d->AddLine(ImVec2(tx, p.y + h * 0.5f), ImVec2(p.x + full, p.y + h * 0.5f), IM_COL32(255, 255, 255, 12), 1.0f);
+        ImGui::Dummy(ImVec2(0, 4));
+    }
+
+    // page title + subtitle + accent gradient rule
+    inline void PageHeader(const char* title, const char* subtitle) {
+        ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.99f, 1.0f), "%s", title);
+        if (subtitle && subtitle[0])
+            ImGui::TextDisabled("%s", subtitle);
+
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float full = ImGui::GetContentRegionAvail().x;
+        ImDrawList* d = ImGui::GetWindowDrawList();
+        d->AddRectFilledMultiColor(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y + 2.0f),
+                                   Accent(0.9f), AccentLight(0.9f), Accent(0.0f), Accent(0.0f));
+        ImGui::Dummy(ImVec2(0, 8));
     }
 
     // pill switch with sliding knob
     inline bool Toggle(const char* label, bool* v) {
-        float h = ROW_H;
-        float tw = 38.0f, th = 18.0f;
         float full = ImGui::GetContentRegionAvail().x;
-
+        float h = ROW_H;
         ImVec2 p = ImGui::GetCursorScreenPos();
+
         ImGui::InvisibleButton(label, ImVec2(full, h));
         bool pressed = ImGui::IsItemClicked();
         if (pressed) *v = !*v;
-
-        ImDrawList* d = ImGui::GetWindowDrawList();
         bool hov = ImGui::IsItemHovered();
 
-        d->AddRectFilled(p, ImVec2(p.x + full, p.y + h), BgElem(), 3.0f);
-        d->AddRect(p, ImVec2(p.x + full, p.y + h),
-                   hov ? Accent(0.75f) : Accent(0.43f), 3.0f, 0, 1.6f);
+        ImDrawList* d = ImGui::GetWindowDrawList();
+        GlassPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
+                   hov ? Accent(0.85f) : Accent(0.30f));
 
         d->AddText(ImVec2(p.x + PAD_X, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f), TXT_MAIN, label);
 
-        float tx = p.x + full - tw - 10.0f;
+        float tw = 40.0f, th = 20.0f;
+        float tx = p.x + full - tw - 12.0f;
         float ty = p.y + (h - th) * 0.5f;
         d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th), *v ? Accent() : OFF_TRACK, th * 0.5f);
+        if (*v)
+            d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th * 0.5f), AccentLight(0.7f), th * 0.5f, ImDrawFlags_RoundCornersTop);
 
-        float kr = 6.0f;
+        float kr = 7.0f;
         float kx = *v ? (tx + tw - kr - 3.0f) : (tx + kr + 3.0f);
         d->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), kr, WHITE);
+        if (hov)
+            d->AddCircle(ImVec2(kx, ty + th * 0.5f), kr, Accent(0.55f), 24, 1.0f);
 
-        ImGui::Dummy(ImVec2(0, GAP - 4));
+        ImGui::Dummy(ImVec2(0, GAP - 2));
         return pressed;
     }
 
@@ -170,7 +223,7 @@ namespace ui {
 
         float trx = p.x + PAD_X;
         float trw = full - PAD_X * 2.0f;
-        float try_ = p.y + h - 14.0f;
+        float try_ = p.y + h - 13.0f;
 
         if (active) {
             float mxpos = ImGui::GetIO().MousePos.x;
@@ -180,31 +233,37 @@ namespace ui {
         }
 
         ImDrawList* d = ImGui::GetWindowDrawList();
-        d->AddRectFilled(p, ImVec2(p.x + full, p.y + h), BgElem(), 3.0f);
-        d->AddRect(p, ImVec2(p.x + full, p.y + h),
-                   (hov || active) ? Accent(0.75f) : Accent(0.43f), 3.0f, 0, 1.6f);
+        GlassPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
+                   (hov || active) ? Accent(0.85f) : Accent(0.30f));
 
-        d->AddText(ImVec2(p.x + PAD_X, p.y + 7), TXT_MAIN, label);
+        d->AddText(ImVec2(p.x + PAD_X, p.y + 8), TXT_MAIN, label);
 
         char buf[64];
         snprintf(buf, sizeof(buf), fmt, *v);
         ImVec2 ts = ImGui::CalcTextSize(buf);
-        d->AddText(ImVec2(p.x + full - ts.x - PAD_X, p.y + 7), Accent(), buf);
+        d->AddText(ImVec2(p.x + full - ts.x - PAD_X, p.y + 8), Accent(), buf);
 
         d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw, try_ + 4), OFF_TRACK, 2.0f);
         float ratio = (mx - mn) != 0.0f ? (*v - mn) / (mx - mn) : 0.0f;
         if (ratio < 0) ratio = 0; if (ratio > 1) ratio = 1;
         d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw * ratio, try_ + 4), Accent(), 2.0f);
+        if (ratio > 0.03f)
+            d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw * ratio, try_ + 2), AccentLight(0.6f), 2.0f, ImDrawFlags_RoundCornersTop);
+
+        float kx = trx + trw * ratio;
+        float kr = (active || hov) ? 6.0f : 5.0f;
+        d->AddCircleFilled(ImVec2(kx, try_ + 2), kr, WHITE);
+        d->AddCircle(ImVec2(kx, try_ + 2), kr, Accent(0.7f), 20, 1.2f);
 
         ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, GAP - 4));
+        ImGui::Dummy(ImVec2(0, GAP - 2));
         return active;
     }
 
     // top nav pill
     inline bool NavButton(const char* label, bool selected, float width = 0.0f) {
         ImVec2 sz = ImGui::CalcTextSize(label);
-        ImVec2 btn(width > 0.0f ? width : sz.x + 26.0f, 30.0f);
+        ImVec2 btn(width > 0.0f ? width : sz.x + 28.0f, 32.0f);
         ImVec2 p = ImGui::GetCursorScreenPos();
 
         ImGui::InvisibleButton(label, btn);
@@ -212,15 +271,32 @@ namespace ui {
         bool hov = ImGui::IsItemHovered();
 
         ImDrawList* d = ImGui::GetWindowDrawList();
-        float na = 1.0f - (ui_transparency / 100.0f);
-        ImU32 bg = selected ? AccentDeep() : (hov ? AccentDeep(0.55f)
-                                                  : IM_COL32(18, 18, 25, (int)(190.0f * na)));
-        d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y), bg, 3.0f);
-        d->AddRect(p, ImVec2(p.x + btn.x, p.y + btn.y),
-                   selected ? Accent(0.92f) : Accent(0.43f), 3.0f, 0, 1.6f);
-        // always centre the caption inside the pill
-        d->AddText(ImVec2(p.x + (btn.x - sz.x) * 0.5f, p.y + (btn.y - sz.y) * 0.5f),
-                   selected ? WHITE : TXT_DIM, label);
+        float ga = GlassA();
+
+        ImU32 fill, border, text;
+        if (selected) {
+            fill = Accent();
+            border = AccentLight(0.9f);
+            text = WHITE;
+        } else if (hov) {
+            fill = IM_COL32(46, 51, 74, (int)(170.0f * ga));
+            border = Accent(0.6f);
+            text = TXT_MAIN;
+        } else {
+            fill = IM_COL32(28, 31, 46, (int)(150.0f * ga));
+            border = IM_COL32(255, 255, 255, 16);
+            text = TXT_DIM;
+        }
+
+        if (selected)
+            d->AddShadowRect(p, ImVec2(p.x + btn.x, p.y + btn.y), Accent(0.45f), 14.0f, ImVec2(0.0f, 2.0f), ImDrawFlags_None, ROUND);
+
+        d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y), fill, ROUND);
+        d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y * 0.5f),
+                         selected ? AccentLight(0.55f) : IM_COL32(255, 255, 255, 4),
+                         ROUND, ImDrawFlags_RoundCornersTop);
+        d->AddRect(p, ImVec2(p.x + btn.x, p.y + btn.y), border, ROUND, 0, 1.2f);
+        d->AddText(ImVec2(p.x + (btn.x - sz.x) * 0.5f, p.y + (btn.y - sz.y) * 0.5f), text, label);
 
         return clicked;
     }
@@ -243,20 +319,19 @@ void RenderMenu() {
         }
 
         ImVec4 accent(ui_accent_color[0], ui_accent_color[1], ui_accent_color[2], 1.0f);
-        st.Colors[ImGuiCol_Border]              = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+        st.Colors[ImGuiCol_Border]              = ImVec4(accent.x, accent.y, accent.z, 0.38f);
         st.Colors[ImGuiCol_CheckMark]           = accent;
         st.Colors[ImGuiCol_SliderGrab]          = ImVec4(accent.x, accent.y, accent.z, 0.55f);
         st.Colors[ImGuiCol_SliderGrabActive]    = accent;
-        st.Colors[ImGuiCol_Header]              = ImVec4(accent.x, accent.y, accent.z, 0.28f);
-        st.Colors[ImGuiCol_HeaderHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+        st.Colors[ImGuiCol_Header]              = ImVec4(accent.x, accent.y, accent.z, 0.22f);
+        st.Colors[ImGuiCol_HeaderHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.45f);
         st.Colors[ImGuiCol_HeaderActive]        = accent;
-        // dividers - these were the ones staying red
-        st.Colors[ImGuiCol_Separator]           = ImVec4(accent.x, accent.y, accent.z, 0.45f);
-        st.Colors[ImGuiCol_SeparatorHovered]    = ImVec4(accent.x, accent.y, accent.z, 0.75f);
+        st.Colors[ImGuiCol_Separator]           = ImVec4(1.0f, 1.0f, 1.0f, 0.08f);
+        st.Colors[ImGuiCol_SeparatorHovered]    = ImVec4(accent.x, accent.y, accent.z, 0.6f);
         st.Colors[ImGuiCol_SeparatorActive]     = accent;
-        st.Colors[ImGuiCol_ButtonHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.45f);
-        st.Colors[ImGuiCol_ButtonActive]        = accent;
-        st.Colors[ImGuiCol_ScrollbarGrab]       = ImVec4(accent.x, accent.y, accent.z, 0.35f);
+        st.Colors[ImGuiCol_ButtonHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.30f);
+        st.Colors[ImGuiCol_ButtonActive]        = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+        st.Colors[ImGuiCol_ScrollbarGrab]       = ImVec4(accent.x, accent.y, accent.z, 0.30f);
         st.Colors[ImGuiCol_ScrollbarGrabHovered]= ImVec4(accent.x, accent.y, accent.z, 0.60f);
         st.Colors[ImGuiCol_ScrollbarGrabActive] = accent;
         st.Colors[ImGuiCol_ResizeGrip]          = ImVec4(accent.x, accent.y, accent.z, 0.30f);
@@ -267,61 +342,125 @@ void RenderMenu() {
         st.Colors[ImGuiCol_PlotLines]           = accent;
         st.Colors[ImGuiCol_PlotHistogram]       = accent;
         st.Colors[ImGuiCol_DragDropTarget]      = accent;
-        st.Colors[ImGuiCol_Tab]                 = ImVec4(accent.x * 0.4f, accent.y * 0.4f, accent.z * 0.4f, 0.80f);
+        st.Colors[ImGuiCol_Tab]                 = ImVec4(0.12f, 0.13f, 0.19f, 0.80f);
         st.Colors[ImGuiCol_TabHovered]          = ImVec4(accent.x, accent.y, accent.z, 0.60f);
-        st.Colors[ImGuiCol_TabActive]           = ImVec4(accent.x * 0.7f, accent.y * 0.7f, accent.z * 0.7f, 0.95f);
+        st.Colors[ImGuiCol_TabActive]           = ImVec4(accent.x, accent.y, accent.z, 0.85f);
 
-        // every background alpha scales with the slider, not just the main window
+        // every background alpha scales with the transparency slider
         float a = 1.0f - (ui_transparency / 100.0f);
-        st.Colors[ImGuiCol_WindowBg]        = ImVec4(0.031f, 0.031f, 0.047f, 0.94f * a);
-        st.Colors[ImGuiCol_ChildBg]         = ImVec4(0.047f, 0.047f, 0.070f, 0.45f * a);
-        st.Colors[ImGuiCol_PopupBg]         = ImVec4(0.030f, 0.030f, 0.050f, 0.94f * a);
-        st.Colors[ImGuiCol_FrameBg]         = ImVec4(0.070f, 0.070f, 0.098f, 0.70f * a);
-        st.Colors[ImGuiCol_FrameBgHovered]  = ImVec4(accent.x, accent.y, accent.z, 0.28f * a);
-        st.Colors[ImGuiCol_FrameBgActive]   = ImVec4(accent.x, accent.y, accent.z, 0.45f * a);
-        st.Colors[ImGuiCol_TitleBg]         = ImVec4(0.030f, 0.030f, 0.050f, 0.94f * a);
-        st.Colors[ImGuiCol_TitleBgActive]   = ImVec4(0.063f, 0.016f, 0.027f, 0.94f * a);
-        st.Colors[ImGuiCol_MenuBarBg]       = ImVec4(0.030f, 0.030f, 0.050f, 0.94f * a);
-        st.Colors[ImGuiCol_Button]          = ImVec4(0.070f, 0.070f, 0.098f, 0.70f * a);
-        st.Colors[ImGuiCol_ScrollbarBg]     = ImVec4(0.030f, 0.030f, 0.050f, 0.40f * a);
+        st.Colors[ImGuiCol_WindowBg]        = ImVec4(0.059f, 0.065f, 0.098f, 0.88f * a);
+        st.Colors[ImGuiCol_ChildBg]         = ImVec4(0.10f, 0.11f, 0.16f, 0.20f * a);
+        st.Colors[ImGuiCol_PopupBg]         = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_FrameBg]         = ImVec4(0.16f, 0.17f, 0.24f, 0.45f * a);
+        st.Colors[ImGuiCol_FrameBgHovered]  = ImVec4(accent.x, accent.y, accent.z, 0.18f * a);
+        st.Colors[ImGuiCol_FrameBgActive]   = ImVec4(accent.x, accent.y, accent.z, 0.32f * a);
+        st.Colors[ImGuiCol_TitleBg]         = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_TitleBgActive]   = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_MenuBarBg]       = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_Button]          = ImVec4(0.16f, 0.17f, 0.24f, 0.55f * a);
+        st.Colors[ImGuiCol_ScrollbarBg]     = ImVec4(0.02f, 0.02f, 0.04f, 0.40f * a);
     }
 
     // start at a comfortable size, stay freely resizable, and never let it be
     // dragged smaller than the tab bar needs
-    ImGui::SetNextWindowSize(ImVec2(760.0f, 600.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 380.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(780.0f, 640.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 400.0f), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::Begin("roblox external", nullptr,
                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+
+    {
+        ImDrawList* d = ImGui::GetWindowDrawList();
+        ImVec2 wp = ImGui::GetWindowPos();
+        ImVec2 ws = ImGui::GetWindowSize();
+        float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
+
+        // soft drop shadow around the whole glass card
+        d->PushClipRectFullScreen();
+        d->AddShadowRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), IM_COL32(0, 0, 0, 130), 26.0f,
+                         ImVec2(0.0f, 10.0f), ImDrawFlags_None, wr);
+        d->PopClipRect();
+
+        // top sheen + hairline accent border
+        d->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y * 0.28f), IM_COL32(255, 255, 255, 5),
+                         wr, ImDrawFlags_RoundCornersTop);
+        d->AddRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), ui::Accent(0.5f), wr, 0, 1.2f);
+    }
 
     // ---- custom title bar ----
     {
         static bool s_minimized = false;
 
         ImDrawList* d = ImGui::GetWindowDrawList();
-        ImVec2 p = ImGui::GetCursorScreenPos();
-        float full = ImGui::GetContentRegionAvail().x;
-        const float bar_h = 42.0f;
+        ImVec2 wp = ImGui::GetWindowPos();
+        ImVec2 ws = ImGui::GetWindowSize();
+        float ga = 1.0f - (ui_transparency / 100.0f);
+        float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
+        const float bar_h = 56.0f;
 
-        // drag anywhere on the bar to move the window
-        ImGui::InvisibleButton("##titlebar", ImVec2(full - 76.0f, bar_h));
+        ImVec2 a(wp.x, wp.y), b(wp.x + ws.x, wp.y + bar_h);
+        d->AddRectFilled(a, b, IM_COL32(21, 24, 38, (int)(215.0f * ga)), wr, ImDrawFlags_RoundCornersTop);
+        d->AddRectFilled(a, ImVec2(b.x, wp.y + bar_h * 0.55f), IM_COL32(255, 255, 255, 6), wr, ImDrawFlags_RoundCornersTop);
+        d->AddLine(ImVec2(a.x, b.y - 1), ImVec2(b.x, b.y - 1), ui::Accent(0.45f), 1.0f);
+        d->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, b.y), IM_COL32(0, 0, 0, 90), 1.0f);
+
+        // drag anywhere on the bar (left of the window controls) to move the window
+        ImGui::SetCursorScreenPos(ImVec2(wp.x, wp.y));
+        ImGui::InvisibleButton("##titlebar", ImVec2(ws.x - 150.0f, bar_h));
         if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
-            ImVec2 wp = ImGui::GetWindowPos();
             ImGui::SetWindowPos(ImVec2(wp.x + delta.x, wp.y + delta.y));
         }
 
-        d->AddText(ImVec2(p.x + 2, p.y + 12), IM_COL32(240, 240, 245, 255), "PHETAMINE");
+        // brand
+        {
+            ImVec2 bp(wp.x + 16.0f, wp.y);
+            d->AddRectFilled(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 40), ui::Accent(), 6.0f);
+            d->AddRectFilled(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 28), ui::AccentLight(0.6f), 6.0f, ImDrawFlags_RoundCornersTop);
+            d->AddRect(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 40), ui::AccentLight(0.9f), 6.0f, 0, 1.0f);
+            d->AddCircleFilled(ImVec2(bp.x + 12, bp.y + 28), 3.5f, ui::WHITE);
 
-        // minimize + close
-        ImGui::SetCursorScreenPos(ImVec2(p.x + full - 70.0f, p.y + 6.0f));
-        if (ui::NavButton("_", false)) s_minimized = !s_minimized;
-        ImGui::SameLine(0.0f, 6.0f);
-        if (ui::NavButton("X", false)) g_request_exit = true;
+            d->AddText(ImVec2(bp.x + 34, bp.y + 15), IM_COL32(238, 240, 247, 255), "ROBLOX EXTERNAL");
+            d->AddText(ImVec2(bp.x + 34, bp.y + 33), ui::TXT_DIM, "usermode overlay  \xc2\xb7  v0.736");
+        }
 
-        ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + bar_h));
-        d->AddLine(ImVec2(p.x, p.y + bar_h - 4), ImVec2(p.x + full, p.y + bar_h - 4),
-                   ui::Accent(0.51f), 1.5f);
+        // status chip
+        {
+            bool attached = g_base_address != 0;
+            ImU32 dot = attached ? IM_COL32(80, 220, 120, 255) : IM_COL32(240, 180, 60, 255);
+            const char* st = attached ? "attached" : "waiting for roblox";
+            ImVec2 ts = ImGui::CalcTextSize(st);
+            float cx = wp.x + ws.x - 150.0f - ts.x - 34.0f;
+            float cy = wp.y + (bar_h - 22.0f) * 0.5f;
+            d->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + ts.x + 30.0f, cy + 22.0f), IM_COL32(12, 14, 22, 120), 11.0f);
+            d->AddCircleFilled(ImVec2(cx + 12.0f, cy + 11.0f), 4.0f, dot);
+            d->AddText(ImVec2(cx + 22.0f, cy + 3.0f), ui::TXT_DIM, st);
+        }
+
+        // window controls
+        {
+            const float btnw = 30.0f, btnh = 30.0f, gap = 8.0f;
+            float x0 = wp.x + ws.x - btnw * 2.0f - gap - 14.0f;
+            float y0 = wp.y + (bar_h - btnh) * 0.5f;
+
+            ImGui::SetCursorScreenPos(ImVec2(x0, y0));
+            if (ImGui::InvisibleButton("##min", ImVec2(btnw, btnh))) s_minimized = !s_minimized;
+            bool mhov = ImGui::IsItemHovered();
+            d->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), mhov ? IM_COL32(60, 64, 88, 210) : IM_COL32(30, 33, 49, 180), 8.0f);
+            d->AddRect(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 18), 8.0f, 0, 1.0f);
+            d->AddLine(ImVec2(x0 + 9, y0 + 15), ImVec2(x0 + 21, y0 + 15), IM_COL32(220, 223, 233, 255), 1.6f);
+
+            float x1 = x0 + btnw + gap;
+            ImGui::SetCursorScreenPos(ImVec2(x1, y0));
+            if (ImGui::InvisibleButton("##close", ImVec2(btnw, btnh))) g_request_exit = true;
+            bool chov = ImGui::IsItemHovered();
+            d->AddRectFilled(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), chov ? IM_COL32(224, 74, 84, 235) : IM_COL32(30, 33, 49, 180), 8.0f);
+            d->AddRect(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 18), 8.0f, 0, 1.0f);
+            d->AddLine(ImVec2(x1 + 10, y0 + 10), ImVec2(x1 + 20, y0 + 20), IM_COL32(240, 240, 245, 255), 1.6f);
+            d->AddLine(ImVec2(x1 + 20, y0 + 10), ImVec2(x1 + 10, y0 + 20), IM_COL32(240, 240, 245, 255), 1.6f);
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(wp.x + 16.0f, wp.y + bar_h + 8.0f));
 
         if (s_minimized) { ImGui::End(); return; }
     }
@@ -334,16 +473,15 @@ void RenderMenu() {
         const float gap   = 6.0f;
         const float avail = ImGui::GetContentRegionAvail().x;
 
-        // lay the tabs out as an even grid so they always fill the row exactly
         int per_row = n;
         float bw = (avail - gap * (per_row - 1)) / per_row;
-        if (bw < 74.0f) {                       // too cramped -> two even rows
+        if (bw < 78.0f) {
             per_row = (n + 1) / 2;
             bw = (avail - gap * (per_row - 1)) / per_row;
         }
         int rows = (n + per_row - 1) / per_row;
 
-        ImGui::BeginChild("nav", ImVec2(0, rows * 30.0f + (rows - 1) * gap + 4.0f), false,
+        ImGui::BeginChild("nav", ImVec2(0, rows * 32.0f + (rows - 1) * gap + 6.0f), false,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         for (int i = 0; i < n; ++i) {
             if (i % per_row) ImGui::SameLine(0.0f, gap);
@@ -351,11 +489,16 @@ void RenderMenu() {
         }
         ImGui::EndChild();
     }
-    ImGui::Dummy(ImVec2(0, 4));
+    ImGui::Dummy(ImVec2(0, 2));
 
-    ImGui::BeginChild("content", ImVec2(0, 0), false);
+    const float footer_h = 28.0f;
+    float content_h = ImGui::GetContentRegionAvail().y - footer_h;
+    if (content_h < 50.0f) content_h = 50.0f;
+    ImGui::BeginChild("content", ImVec2(0, content_h), false);
     ImGui::PushItemWidth(-1.0f);
+
         if (s_page == 0) {
+            ui::PageHeader("aimbot", "locks the camera to the nearest target in fov");
             ui::Toggle("enabled", &aimbot_enabled);
             ImGui::Combo("aim type", &aimbot_aim_type, "camera\0mouse\0");
             ImGui::Combo("target bone", &aimbot_part, "head\0upper torso\0lower torso\0left hand\0right hand\0left foot\0right foot\0");
@@ -372,6 +515,7 @@ void RenderMenu() {
         }
 
         if (s_page == 1) {
+            ui::PageHeader("esp", "player boxes, bars and extras");
             ui::Toggle("enabled", &esp_enabled);
             ImGui::Separator();
             ui::Toggle("box", &box_esp);
@@ -410,9 +554,6 @@ void RenderMenu() {
             ui::Toggle("china hat", &chinahat);
             if (chinahat) ImGui::ColorEdit4("hat color", chinahat_color);
             ImGui::Separator();
-        }
-
-        if (s_page == 1) {
             ui::Toggle("chams", &chams_enabled);
             if (chams_enabled) ImGui::ColorEdit4("chams color", chams_color);
             ImGui::Separator();
@@ -424,6 +565,7 @@ void RenderMenu() {
         }
 
         if (s_page == 2) {
+            ui::PageHeader("misc", "movement and player features");
             ImGui::TextDisabled("set keys for these in the keybinds tab");
             ImGui::Separator();
             ui::Toggle("noclip", &noclip_enabled);
@@ -453,10 +595,10 @@ void RenderMenu() {
             ui::Toggle("inventory checker", &inventory_checker_enabled);
             if (inventory_checker_enabled) ImGui::TextDisabled("hold the key with your cursor over a player");
             ImGui::Separator();
-
         }
 
         if (s_page == 3) {
+            ui::PageHeader("world", "replace the game's skybox");
             ui::Toggle("skybox changer", &skybox_changer_enabled);
             if (skybox_changer_enabled) {
                 ImGui::Combo("skybox", &skybox_type,
@@ -470,7 +612,7 @@ void RenderMenu() {
         }
 
         if (s_page == 4) {
-            ImGui::TextDisabled("click a bind then press any key or mouse button");
+            ui::PageHeader("keybinds", "click a bind then press any key or mouse button");
             ImGui::Separator();
 
             ImGui::Text("menu");
@@ -493,27 +635,10 @@ void RenderMenu() {
 
             ImGui::TextDisabled("all binds are hold-to-use except click teleport,");
             ImGui::TextDisabled("which fires once per press.");
-
         }
 
         if (s_page == 7) {
-            if (ImGui::Button("clear", ImVec2(80, 0))) {
-                std::lock_guard<std::mutex> lock(g_log_mutex);
-                g_log_lines.clear();
-            }
-            ImGui::Separator();
-            ImGui::BeginChild("logscroll", ImVec2(0, 240), true);
-            {
-                std::lock_guard<std::mutex> lock(g_log_mutex);
-                for (const std::string& l : g_log_lines)
-                    ImGui::TextUnformatted(l.c_str());
-            }
-            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)
-                ImGui::SetScrollHereY(1.0f);
-            ImGui::EndChild();
-        }
-
-        if (s_page == 7) {
+            ui::PageHeader("debug", "diagnostics, logs and offset write tests");
             ImGui::TextWrapped("if a feature does nothing, check these values. "
                                "0x0 or 'INVALID' means that offset is wrong for your client version.");
             ImGui::Separator();
@@ -545,7 +670,6 @@ void RenderMenu() {
 
             ImGui::Separator();
 
-            // world-to-screen inputs - esp/aimbot/chams all depend on these
             if (ve.is_valid()) {
                 float view[16]{};
                 float dims[2]{};
@@ -582,8 +706,6 @@ void RenderMenu() {
             ImGui::TextWrapped("flight / infinite jump / teleport all write to the root part's "
                                "Primitive. this proves whether those writes actually land.");
 
-            // NOTE: Humanoid::HumanoidRootPart (0x478) reads back as 0 on this client
-            // build, so the root part is resolved by name instead. Probe shown for info.
             if (is_valid_address(lp.humanoid_address)) {
                 uintptr_t probe = read<uintptr_t>(lp.humanoid_address + Offsets::Humanoid::HumanoidRootPart);
                 ImGui::Text("hrp via 0x478   : 0x%llX %s",
@@ -591,7 +713,7 @@ void RenderMenu() {
                             is_valid_address(probe) ? "" : "(unused - offset is wrong)");
             }
 
-            uintptr_t prim = lp.hrp_primitive;   // what every feature actually writes to
+            uintptr_t prim = lp.hrp_primitive;
             ImGui::Text("hrp primitive   : 0x%llX %s",
                         (unsigned long long)prim,
                         is_valid_address(prim) ? "" : "<- INVALID");
@@ -645,9 +767,26 @@ void RenderMenu() {
                                    "root part not resolved - spawn in, or names are failing");
             }
 
+            ImGui::Separator();
+            ui::Section("log");
+            if (ImGui::Button("clear", ImVec2(80, 0))) {
+                std::lock_guard<std::mutex> lock(g_log_mutex);
+                g_log_lines.clear();
+            }
+            ImGui::Separator();
+            ImGui::BeginChild("logscroll", ImVec2(0, 200), true);
+            {
+                std::lock_guard<std::mutex> lock(g_log_mutex);
+                for (const std::string& l : g_log_lines)
+                    ImGui::TextUnformatted(l.c_str());
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)
+                ImGui::SetScrollHereY(1.0f);
+            ImGui::EndChild();
         }
 
         if (s_page == 5) {
+            ui::PageHeader("ui", "theme and window look");
             ui::Section("window");
             ui::Slider("menu transparency", &ui_transparency, 0.0f, 90.0f, "%.0f%%");
             ui::Toggle("rounded corners", &ui_rounded_corners);
@@ -662,10 +801,10 @@ void RenderMenu() {
             ui::Section("reset");
             if (ImGui::Button("reset to default theme", ImVec2(-1, 0))) {
                 ui_transparency = 6.0f;
-                ui_rounded_corners = false;
-                ui_corner_radius = 0.0f;
+                ui_rounded_corners = true;
+                ui_corner_radius = 14.0f;
                 ui_rainbow = false;
-                ui_accent_color[0] = 0.78f; ui_accent_color[1] = 0.08f; ui_accent_color[2] = 0.08f;
+                ui_accent_color[0] = 0.42f; ui_accent_color[1] = 0.47f; ui_accent_color[2] = 0.98f;
             }
         }
 
@@ -674,6 +813,8 @@ void RenderMenu() {
             static char rename_buf[128] = "";
             static std::vector<std::string> config_list = config::GetConfigList();
             static int selected_config = -1;
+
+            ui::PageHeader("config", "save and load named presets");
 
             ImGui::InputText("config name", config_name_buf, sizeof(config_name_buf));
 
@@ -730,9 +871,32 @@ void RenderMenu() {
                 }
             }
             ImGui::EndChild();
-
         }
+
     ImGui::PopItemWidth();
     ImGui::EndChild();
+
+    // ---- footer status bar ----
+    {
+        ImDrawList* d = ImGui::GetWindowDrawList();
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float full = ImGui::GetContentRegionAvail().x;
+        d->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y), IM_COL32(255, 255, 255, 12), 1.0f);
+
+        char left[96];
+        if (g_base_address) {
+            snprintf(left, sizeof(left), "attached  pid %u", (unsigned)mem::process_id.load());
+        } else {
+            snprintf(left, sizeof(left), "waiting for roblox...");
+        }
+        d->AddText(ImVec2(p.x, p.y + 7), ui::TXT_DIM, left);
+
+        char right[96];
+        snprintf(right, sizeof(right), "%d fps  \xc2\xb7  %s toggles menu",
+                 (int)ImGui::GetIO().Framerate, KeyName(menu_toggle_keybind));
+        ImVec2 rts = ImGui::CalcTextSize(right);
+        d->AddText(ImVec2(p.x + full - rts.x, p.y + 7), ui::TXT_DIM, right);
+    }
+
     ImGui::End();
 }

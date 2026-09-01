@@ -24,7 +24,7 @@ DX11 + ImGui overlay on top.
    `roblox external\x64\Release\roblox external.exe` (project build).
 
 Requires the **Desktop development with C++** workload and the Windows 10/11 SDK.
-No package manager — ImGui (1.91.1) and Clipper2 are vendored.
+No package manager — ImGui (1.91.1) is vendored.
 Libs linked: `d3d11 dxgi dwmapi shell32`.
 
 > ⚠️ Release builds with **AVX2** (`EnableEnhancedInstructionSet`). Needs a ~2013+ CPU.
@@ -75,7 +75,6 @@ korblox/rage, 3D ESP preview, mesh chams + memory mesh chams (see §5).
 roblox external/
   main.cpp        entry (WinMain), FeatureLoop thread, AttachLoop (auto-reconnect), render_ui()
   overlay.hpp     overlay window, D3D11, ImGui init + theme, input thread, tray icon, taskbar window
-  overlay.h       thin accessor for the D3D device/context
   menu.cpp        entire GUI: ui:: widgets, nav bar, all pages
   globals.h       every setting as an inline global + LogLine() + g_request_exit
   memory.h/.cpp   RPM/WPM wrappers, instance struct, name/classname/children readers
@@ -97,9 +96,9 @@ roblox external/
 | attach | `AttachLoop()` — attach + auto-reconnect, 1s poll |
 | input | `input_thread()` — `GetAsyncKeyState` polling, feeds ImGui, menu toggle |
 
-> The namespace is still called `discord_overlay` for historical reasons. It has
-> **nothing to do with Discord any more** — that dependency was removed in `a18a7f1`.
-> Renaming it is a safe, purely cosmetic cleanup.
+> The overlay namespace is now simply called `overlay` (renamed from the old
+> `discord_overlay` in a clean-up pass). `overlay.h` (a 6-line shim over
+> `overlay.hpp`) was folded away; include `overlay.hpp` directly.
 
 ### Data flow
 `g_base_address + VisualEngine::Pointer` → `VisualEngine::FakeDataModel` →
@@ -193,7 +192,9 @@ returns **garbage names**, which breaks every name-based lookup — player detec
 parts, skeletons, the root part — while class-name lookups keep working. That mismatch
 caused a long stretch of "nothing works but walkspeed". Fixed in `8906f70`.
 
-`offsets_dump.txt` (repo root) is intentionally **blank** — paste new dumps there.
+`offsets_dump.txt` (repo root) holds the full dump this `offsets.h` was generated
+from (client `version-f5a60436d48947d3`). If you re-dump, paste the new dump there
+and diff it against `offsets.h`.
 
 ---
 
@@ -222,6 +223,12 @@ caused a long stretch of "nothing works but walkspeed". Fixed in `8906f70`.
   it crosses into unmapped memory, which silently blanked names near page boundaries.
 - **Release flags:** `/Ox`, Speed, AnySuitable inlining, omit frame pointers, string pooling,
   fast FP, AVX2, `/MP`, LTCG, `OptimizeReferences`, `COMDATFolding`.
+- **Vendor tree slimming.** The whole `Clipper2/` tree (C++ lib + C# + Delphi + DLL
+  wrappers + tests/examples) was removed — ~2.7 MB / 230 files across four languages —
+  along with the dead `DrawMergedPoly` that pulled it in. Dead `esp.cpp` helpers
+  (convex hull, R15 chain lookup, mesh-logging sets) and ~20 unused globals in
+  `globals.h` were also deleted. `offsets.h` dropped two junk entries not present in
+  the dump (`Humanoid::PlatformStatePointer = 0xb9fe4b32`, `Instance::Attribute*`).
 
 > On "use a faster language": C++ is already correct here. The workload is **syscall-bound**
 > (`ReadProcessMemory` ≈ 1–3µs each), not CPU-bound. Rust/C/asm would make identical
@@ -242,14 +249,22 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 
 ## 9. Housekeeping / possible next cleanups
 
-- Rename namespace `discord_overlay` → something accurate (cosmetic, zero risk).
-- `overlay.h` is a 6-line shim over `overlay.hpp` — could be folded in.
-- `.vcxproj.filters` isn't maintained (VS shows a flat tree).
-- Nothing in the repo is compiled but unused any more (verified after the mesh removal).
+- ~~Rename namespace `discord_overlay`~~ → done, it's `overlay` now.
+- ~~`overlay.h` shim~~ → folded away, include `overlay.hpp`.
+- ~~`.vcxproj.filters`~~ → regenerated (imgui + per-feature folders).
+- ~~Clipper2 vendor tree~~ → removed entirely (see §7). The only user
+  (`DrawMergedPoly` in esp.cpp) was dead code left over from the mesh backend.
+- Remaining idea: `imgui/imgui_demo.cpp`, `imgui/addons/` and `imgui/TextEditor.*`
+  are vendored but not compiled — safe to delete if you want a slimmer tree.
 
 ## 10. Changelog (this branch)
 
 ```
+(wip)  Glassmorphic UI overhaul: frosted panels, soft shadows, indigo accent,
+       new title bar + status chip + footer; rename namespace -> overlay; fold
+       overlay.h; regenerate .vcxproj.filters; fix KeyName dangling pointer
+(wip)  Remove Clipper2 vendor tree (C++/C#/Delphi/DLL) + dead DrawMergedPoly,
+       dead esp.cpp helpers and unused globals; prune junk offsets
 79a5dba Remove orphaned mesh cham backend and all references
 c24c828 Revert mesh backend enablement (headers incompatible), drop /GS- sdl conflict
 2a24d66 Enable mesh cham implementations, menu opens on start, accent on separators, part-size guard

@@ -80,7 +80,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -107,7 +107,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -127,7 +127,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -154,7 +154,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -183,10 +183,6 @@
     <ClCompile Include="features\skybox_changer\skybox_changer.cpp" />
     <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp" />
     <ClCompile Include="features\config\config.cpp" />
-    <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.engine.cpp" />
-    <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.offset.cpp" />
-    <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.rectclip.cpp" />
-    <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.triangulation.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_draw.cpp" />
     <ClCompile Include="imgui\imgui_tables.cpp" />
@@ -203,7 +199,6 @@
     <ClInclude Include="game.h" />
     <ClInclude Include="offsets.h" />
     <ClInclude Include="cache.h" />
-    <ClInclude Include="overlay.h" />
     <ClInclude Include="overlay.hpp" />
     <ClInclude Include="features\aimbot\aimbot.h" />
     <ClInclude Include="features\esp\esp.h" />

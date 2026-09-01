@@ -198,6 +198,8 @@ namespace Offsets {
          inline constexpr uintptr_t HealthDisplayDistance = 0x188;
          inline constexpr uintptr_t HealthDisplayType = 0x18c;
          inline constexpr uintptr_t HipHeight = 0x194;
+         // NOTE: reads back 0x0 on this client build (0.736). The root part is
+         // resolved by NAME ("HumanoidRootPart") instead - see cache.cpp.
          inline constexpr uintptr_t HumanoidRootPart = 0x478;
          inline constexpr uintptr_t HumanoidState = 0x8c0;
          inline constexpr uintptr_t HumanoidStateID = 0x20;
@@ -213,7 +215,6 @@ namespace Offsets {
          inline constexpr uintptr_t NameDisplayDistance = 0x1b0;
          inline constexpr uintptr_t NameOcclusion = 0x1b4;
          inline constexpr uintptr_t PlatformStand = 0x1dc;
-         inline constexpr uintptr_t PlatformStatePointer = 0xb9fe4b32;
          inline constexpr uintptr_t RequiresNeck = 0x1dd;
          inline constexpr uintptr_t RigType = 0x1c0;
          inline constexpr uintptr_t SeatPart = 0x108;
@@ -226,10 +227,6 @@ namespace Offsets {
     }
 
     namespace Instance {
-         inline constexpr uintptr_t AttributeContainer = 0x48;
-         inline constexpr uintptr_t AttributeList = 0x18;
-         inline constexpr uintptr_t AttributeToNext = 0x58;
-         inline constexpr uintptr_t AttributeToValue = 0x18;
          inline constexpr uintptr_t ChildrenEnd = 0x8;
          inline constexpr uintptr_t ChildrenStart = 0x78;
          inline constexpr uintptr_t ClassBase = 0x1b0;
@@ -392,6 +389,9 @@ namespace Offsets {
          inline constexpr uintptr_t Flags = 0x1b6;
          inline constexpr uintptr_t Material = 0x0;
          inline constexpr uintptr_t Owner = 0x210;
+         // Position and Size are SUSPECT on this build - the write test in the
+         // debug tab + "part size read" decide whether they're correct. If the
+         // position write doesn't stick, re-dump both.
          inline constexpr uintptr_t Position = 0xec;
          inline constexpr uintptr_t Rotation = 0xc8;
          inline constexpr uintptr_t Size = 0x1bc;

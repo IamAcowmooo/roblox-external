@@ -5,15 +5,12 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
-#include <unordered_set>
 #include "esp.h"
 #include "globals.h"
 #include "memory.h"
 #include "cache.h"
 #include "offsets.h"
-#include "overlay.h"
 #include "imgui/imgui.h"
-#include <clipper2/clipper.h>
 
 namespace features {
 
@@ -40,18 +37,6 @@ namespace features {
         bool valid;
     };
 
-    enum R15ChainId {
-        ChainNone = -1,
-        ChainLeftArm = 0,
-        ChainRightArm = 1,
-        ChainLeftLeg = 2,
-        ChainRightLeg = 3,
-        ChainCount = 4,
-    };
-
-    static std::unordered_set<uint64_t> g_logged_missing_mesh_asset;
-    static std::unordered_set<uint64_t> g_logged_missing_mesh_data;
-
     static bool ReadRaw(uint64_t address, void* buffer, size_t size) {
         return read_raw(address, buffer, size);
     }
@@ -66,10 +51,6 @@ namespace features {
 
     static bool ReadMatrix(uint64_t address, Matrix4& out) {
         return ReadRaw(address, &out, sizeof(out));
-    }
-
-    static float Dot(const Vec3& a, const Vec3& b) {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
     static float LengthSq(const Vec3& v) {
@@ -87,51 +68,11 @@ namespace features {
         return { a.x - b.x, a.y - b.y, a.z - b.z };
     }
 
-    static Vec3 ToLocal(const float* m, const Vec3& world_delta) {
-        return {
-            m[0] * world_delta.x + m[3] * world_delta.y + m[6] * world_delta.z,
-            m[1] * world_delta.x + m[4] * world_delta.y + m[7] * world_delta.z,
-            m[2] * world_delta.x + m[5] * world_delta.y + m[8] * world_delta.z
-        };
-    }
-
-    static void RotateYVariant(int variant, float in_x, float in_y, float in_z, float& out_x, float& out_y, float& out_z) {
-        switch (variant & 3) {
-        case 1: out_x = -in_x; out_y = in_y; out_z = -in_z; break;
-        case 2: out_x = in_z; out_y = in_y; out_z = -in_x; break;
-        case 3: out_x = -in_z; out_y = in_y; out_z = in_x; break;
-        default: out_x = in_x; out_y = in_y; out_z = in_z; break;
-        }
-    }
-
     static int FindEntityPartIndex(const cache::EspEntity& entity, const char* part_name) {
         for (size_t i = 0; i < entity.primitive_count; ++i) {
             if (strcmp(entity.part_names[i], part_name) == 0) return (int)i;
         }
         return -1;
-    }
-
-    static const char* GetR15ChainNames(R15ChainId chain_id, const char*& anchor, const char*& upper, const char*& lower, const char*& end) {
-        switch (chain_id) {
-        case ChainLeftArm:
-            anchor = "UpperTorso"; upper = "LeftUpperArm"; lower = "LeftLowerArm"; end = "LeftHand"; return upper;
-        case ChainRightArm:
-            anchor = "UpperTorso"; upper = "RightUpperArm"; lower = "RightLowerArm"; end = "RightHand"; return upper;
-        case ChainLeftLeg:
-            anchor = "LowerTorso"; upper = "LeftUpperLeg"; lower = "LeftLowerLeg"; end = "LeftFoot"; return upper;
-        case ChainRightLeg:
-            anchor = "LowerTorso"; upper = "RightUpperLeg"; lower = "RightLowerLeg"; end = "RightFoot"; return upper;
-        default:
-            anchor = nullptr; upper = nullptr; lower = nullptr; end = nullptr; return nullptr;
-        }
-    }
-
-    static R15ChainId GetR15ChainId(const char* part_name) {
-        if (strcmp(part_name, "LeftUpperArm") == 0 || strcmp(part_name, "LeftLowerArm") == 0 || strcmp(part_name, "LeftHand") == 0) return ChainLeftArm;
-        if (strcmp(part_name, "RightUpperArm") == 0 || strcmp(part_name, "RightLowerArm") == 0 || strcmp(part_name, "RightHand") == 0) return ChainRightArm;
-        if (strcmp(part_name, "LeftUpperLeg") == 0 || strcmp(part_name, "LeftLowerLeg") == 0 || strcmp(part_name, "LeftFoot") == 0) return ChainLeftLeg;
-        if (strcmp(part_name, "RightUpperLeg") == 0 || strcmp(part_name, "RightLowerLeg") == 0 || strcmp(part_name, "RightFoot") == 0) return ChainRightLeg;
-        return ChainNone;
     }
 
 
@@ -359,12 +300,7 @@ namespace features {
             (int)(skeleton_color[2] * 255.0f),
             (int)(skeleton_color[3] * 255.0f)
         );
-        
-        ImU32 black = IM_COL32(0, 0, 0, 200);
 
-        // Pre-allocate position cache to reduce ReadProcessMemory calls
-        static Vec3 bone_positions[32];
-        
         for (const cache::SkeletonEntity& skel : skeletons) {
             if (!skel.head || !skel.upper_torso) continue;
 
@@ -670,31 +606,6 @@ namespace features {
         DrawTextWithShadow(draw, font_size, ImVec2(x_pos, y_pos), col, buf);
     }
 
-    static int ComputeConvexHull(ImVec2* pts, int n) {
-        if (n < 3) return n;
-        std::sort(pts, pts + n, [](const ImVec2& a, const ImVec2& b) {
-            return a.x < b.x || (a.x == b.x && a.y < b.y);
-        });
-        static ImVec2 hull[256];
-        int k = 0;
-        for (int i = 0; i < n; i++) {
-            while (k >= 2 && (hull[k-1].x - hull[k-2].x) * (pts[i].y - hull[k-2].y)
-                            - (hull[k-1].y - hull[k-2].y) * (pts[i].x - hull[k-2].x) <= 0.0f)
-                k--;
-            hull[k++] = pts[i];
-        }
-        int lower = k + 1;
-        for (int i = n - 2; i >= 0; i--) {
-            while (k >= lower && (hull[k-1].x - hull[k-2].x) * (pts[i].y - hull[k-2].y)
-                                - (hull[k-1].y - hull[k-2].y) * (pts[i].x - hull[k-2].x) <= 0.0f)
-                k--;
-            hull[k++] = pts[i];
-        }
-        k--;
-        for (int i = 0; i < k; i++) pts[i] = hull[i];
-        return k;
-    }
-
     void RenderChams() {
         Matrix4 view{};
         Vec2 viewport{};
@@ -766,83 +677,6 @@ namespace features {
             }
         }
     }
-
-    static constexpr double CLIPPER_SCALE = 100.0;
-
-    static void DrawMergedPoly(const Clipper2Lib::Path64& poly, ImDrawList* draw, ImU32 col) {
-        int n = (int)poly.size();
-        if (n < 3 || n > 256) return;
-
-        static ImVec2 verts[256];
-        static int idx[256];
-
-        for (int i = 0; i < n; i++)
-            verts[i] = {(float)(poly[i].x / CLIPPER_SCALE), (float)(poly[i].y / CLIPPER_SCALE)};
-
-        float area = 0.0f;
-        for (int i = 0; i < n; i++) {
-            int j = (i + 1) % n;
-            area += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
-        }
-        for (int i = 0; i < n; i++) idx[i] = (area > 0.0f) ? i : (n - 1 - i);
-
-        static ImVec2 tris[768];
-        int tri_count = 0;
-        int nv = n;
-        int safety = nv * nv;
-        int vi = 0;
-
-        while (nv > 2 && safety-- > 0) {
-            int u = vi % nv;
-            int v = (vi + 1) % nv;
-            int w = (vi + 2) % nv;
-            const ImVec2& pu = verts[idx[u]];
-            const ImVec2& pv = verts[idx[v]];
-            const ImVec2& pw = verts[idx[w]];
-            float cross = (pv.x - pu.x) * (pw.y - pu.y) - (pv.y - pu.y) * (pw.x - pu.x);
-            if (cross > 0.0f) {
-                bool ear = true;
-                for (int k2 = 0; k2 < nv; k2++) {
-                    if (k2 == u || k2 == v || k2 == w) continue;
-                    const ImVec2& pt = verts[idx[k2]];
-                    float d1 = (pt.x - pv.x) * (pu.y - pv.y) - (pu.x - pv.x) * (pt.y - pv.y);
-                    float d2 = (pt.x - pw.x) * (pv.y - pw.y) - (pv.x - pw.x) * (pt.y - pw.y);
-                    float d3 = (pt.x - pu.x) * (pw.y - pu.y) - (pw.x - pu.x) * (pt.y - pu.y);
-                    if (!((d1 < 0) || (d2 < 0) || (d3 < 0)) || !((d1 > 0) || (d2 > 0) || (d3 > 0))) {
-                        ear = false;
-                        break;
-                    }
-                }
-                if (ear) {
-                    tris[tri_count * 3] = pu;
-                    tris[tri_count * 3 + 1] = pv;
-                    tris[tri_count * 3 + 2] = pw;
-                    tri_count++;
-                    for (int k2 = v; k2 < nv - 1; k2++) idx[k2] = idx[k2 + 1];
-                    nv--;
-                    if (vi > 0) vi--;
-                    safety = nv * nv;
-                    continue;
-                }
-            }
-            vi++;
-        }
-
-        if (tri_count == 0) return;
-        ImVec2 uv = ImGui::GetIO().Fonts->TexUvWhitePixel;
-        draw->PrimReserve(tri_count * 3, tri_count * 3);
-        for (int i = 0; i < tri_count; i++) {
-            ImDrawIdx base = (ImDrawIdx)draw->_VtxCurrentIdx;
-            draw->PrimWriteIdx(base);
-            draw->PrimWriteIdx(base + 1);
-            draw->PrimWriteIdx(base + 2);
-            draw->PrimWriteVtx(tris[i * 3], uv, col);
-            draw->PrimWriteVtx(tris[i * 3 + 1], uv, col);
-            draw->PrimWriteVtx(tris[i * 3 + 2], uv, col);
-        }
-    }
-
-
 
     void RenderExpandedHitbox() {
         if (!render_expanded_hitbox) return;

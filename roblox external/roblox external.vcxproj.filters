@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -9,9 +9,97 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    <Filter Include="imgui">
+      <UniqueIdentifier>{1A2B3C4D-1111-4222-8333-444455556666}</UniqueIdentifier>
     </Filter>
+    <Filter Include="imgui\backends">
+      <UniqueIdentifier>{1A2B3C4D-2222-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features">
+      <UniqueIdentifier>{1A2B3C4D-3333-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\aimbot">
+      <UniqueIdentifier>{1A2B3C4D-4001-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\esp">
+      <UniqueIdentifier>{1A2B3C4D-4002-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\flight">
+      <UniqueIdentifier>{1A2B3C4D-4003-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\noclip">
+      <UniqueIdentifier>{1A2B3C4D-4004-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\walkspeed">
+      <UniqueIdentifier>{1A2B3C4D-4005-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\click_teleport">
+      <UniqueIdentifier>{1A2B3C4D-4006-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\infinite_jump">
+      <UniqueIdentifier>{1A2B3C4D-4007-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\fov_changer">
+      <UniqueIdentifier>{1A2B3C4D-4008-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\inventory_checker">
+      <UniqueIdentifier>{1A2B3C4D-4009-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\skybox_changer">
+      <UniqueIdentifier>{1A2B3C4D-4010-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\hitbox_expander">
+      <UniqueIdentifier>{1A2B3C4D-4011-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="features\config">
+      <UniqueIdentifier>{1A2B3C4D-4012-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="menu.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="memory.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="process.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="game.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="cache.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_draw.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_tables.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\imgui_widgets.cpp"><Filter>imgui</Filter></ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_dx11.cpp"><Filter>imgui\backends</Filter></ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp"><Filter>imgui\backends</Filter></ClCompile>
+    <ClCompile Include="features\aimbot\aimbot.cpp"><Filter>features\aimbot</Filter></ClCompile>
+    <ClCompile Include="features\esp\esp.cpp"><Filter>features\esp</Filter></ClCompile>
+    <ClCompile Include="features\flight\flight.cpp"><Filter>features\flight</Filter></ClCompile>
+    <ClCompile Include="features\noclip\noclip.cpp"><Filter>features\noclip</Filter></ClCompile>
+    <ClCompile Include="features\walkspeed\walkspeed.cpp"><Filter>features\walkspeed</Filter></ClCompile>
+    <ClCompile Include="features\click_teleport\click_teleport.cpp"><Filter>features\click_teleport</Filter></ClCompile>
+    <ClCompile Include="features\infinite_jump\infinite_jump.cpp"><Filter>features\infinite_jump</Filter></ClCompile>
+    <ClCompile Include="features\fov_changer\fov_changer.cpp"><Filter>features\fov_changer</Filter></ClCompile>
+    <ClCompile Include="features\inventory_checker\inventory_checker.cpp"><Filter>features\inventory_checker</Filter></ClCompile>
+    <ClCompile Include="features\skybox_changer\skybox_changer.cpp"><Filter>features\skybox_changer</Filter></ClCompile>
+    <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp"><Filter>features\hitbox_expander</Filter></ClCompile>
+    <ClCompile Include="features\config\config.cpp"><Filter>features\config</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="globals.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="memory.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="process.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="game.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="offsets.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="cache.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="overlay.hpp"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="features\aimbot\aimbot.h"><Filter>features\aimbot</Filter></ClInclude>
+    <ClInclude Include="features\esp\esp.h"><Filter>features\esp</Filter></ClInclude>
+    <ClInclude Include="features\flight\flight.h"><Filter>features\flight</Filter></ClInclude>
+    <ClInclude Include="features\noclip\noclip.h"><Filter>features\noclip</Filter></ClInclude>
+    <ClInclude Include="features\walkspeed\walkspeed.h"><Filter>features\walkspeed</Filter></ClInclude>
+    <ClInclude Include="features\click_teleport\click_teleport.h"><Filter>features\click_teleport</Filter></ClInclude>
+    <ClInclude Include="features\infinite_jump\infinite_jump.h"><Filter>features\infinite_jump</Filter></ClInclude>
+    <ClInclude Include="features\fov_changer\fov_changer.h"><Filter>features\fov_changer</Filter></ClInclude>
+    <ClInclude Include="features\inventory_checker\inventory_checker.h"><Filter>features\inventory_checker</Filter></ClInclude>
+    <ClInclude Include="features\skybox_changer\skybox_changer.h"><Filter>features\skybox_changer</Filter></ClInclude>
+    <ClInclude Include="features\hitbox_expander\hitbox_expander.h"><Filter>features\hitbox_expander</Filter></ClInclude>
+    <ClInclude Include="features\config\config.h"><Filter>features\config</Filter></ClInclude>
   </ItemGroup>
 </Project>
