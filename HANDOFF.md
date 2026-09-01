@@ -284,10 +284,10 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
-(wip)  UI relayout inspired by ff0l/custom-ui-1: left icon rail + animated accent
-       pill + content well, eased hover glows + reveal fade, vector rail glyphs;
-       ESP box rebuilt from canonical sizes (no Size/Rotation reads); debug
-       "probe primitive floats" button
+(wip)  UI restyled to match ff0l/custom-ui-1's Rose glass: muted warm gradient
+       (no bright catch-lights/reflections), faint outline + top highlight, soft
+       shadow; tabs moved back to the TOP (animated accent pill); log "copy"
+       button (copies whole log to clipboard) next to "clear"
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
