@@ -6,6 +6,7 @@
 #include <string>
 #include <cfloat>
 #include <cctype>
+#include <cmath>
 #include "imgui/imgui.h"
 #include "globals.h"
 #include "memory.h"
@@ -95,7 +96,22 @@ namespace ui {
     static constexpr float GAP       = 6.0f;
     static constexpr float ROUND     = 10.0f;
 
-    inline float GlassA() { return 1.0f - (ui_transparency / 100.0f); }
+    static float s_ui_reveal = 0.0f;
+
+    // frame-rate independent smooth approach (0..1); used for hover glows,
+    // the rail pill and the one-time reveal fade
+    inline float Ease(float& state, float target, float speed) {
+        float dt = ImGui::GetIO().DeltaTime;
+        if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 60.0f;
+        state += (target - state) * (1.0f - expf(-speed * dt));
+        return state;
+    }
+
+    // every glass surface fades in once on the first frame
+    inline float GlassA() {
+        Ease(s_ui_reveal, 1.0f, 9.0f);
+        return (1.0f - (ui_transparency / 100.0f)) * s_ui_reveal;
+    }
     inline float AnimT() { return (float)ImGui::GetTime(); }
 
     inline ImU32 Mix(ImU32 a, ImU32 b, float t) {
@@ -129,6 +145,79 @@ namespace ui {
     inline ImU32 PanelBase()  { return IM_COL32(26, 29, 44, (int)(118.0f * GlassA())); }
     inline ImU32 GlassTop()   { return IM_COL32(30, 33, 50, (int)(150.0f * GlassA())); }
     inline ImU32 GlassDeep()  { return IM_COL32(15, 17, 27, (int)(165.0f * GlassA())); }
+
+    // ---- minimal vector glyphs for the left rail ----
+    enum RailIconKind { RK_AIMBOT, RK_ESP, RK_MISC, RK_WORLD, RK_KEYS, RK_UI, RK_CONFIG, RK_DEBUG };
+
+    inline void RailIcon(ImDrawList* d, const ImVec2& c, float s, int kind, ImU32 col) {
+        const float th = 1.7f;
+        switch (kind) {
+        case RK_AIMBOT: {
+            d->AddCircle(c, s * 0.72f, col, 40, th);
+            d->AddLine(ImVec2(c.x, c.y - s * 0.84f), ImVec2(c.x, c.y - s * 0.34f), col, th);
+            d->AddLine(ImVec2(c.x, c.y + s * 0.34f), ImVec2(c.x, c.y + s * 0.84f), col, th);
+            d->AddLine(ImVec2(c.x - s * 0.84f, c.y), ImVec2(c.x - s * 0.34f, c.y), col, th);
+            d->AddLine(ImVec2(c.x + s * 0.34f, c.y), ImVec2(c.x + s * 0.84f, c.y), col, th);
+            d->AddCircleFilled(c, s * 0.10f, col);
+            break;
+        }
+        case RK_ESP: {
+            d->AddEllipse(c, ImVec2(s * 0.85f, s * 0.55f), col, 0.0f, 40, th);
+            d->AddCircleFilled(c, s * 0.30f, col);
+            break;
+        }
+        case RK_MISC: {
+            ImVec2 p[6];
+            p[0] = ImVec2(c.x + s * 0.12f, c.y - s * 0.95f);
+            p[1] = ImVec2(c.x - s * 0.45f, c.y + s * 0.10f);
+            p[2] = ImVec2(c.x - s * 0.02f, c.y + s * 0.10f);
+            p[3] = ImVec2(c.x - s * 0.18f, c.y + s * 0.95f);
+            p[4] = ImVec2(c.x + s * 0.42f, c.y - s * 0.10f);
+            p[5] = ImVec2(c.x - s * 0.02f, c.y - s * 0.10f);
+            d->AddConvexPolyFilled(p, 6, col);
+            break;
+        }
+        case RK_WORLD: {
+            d->AddCircle(c, s * 0.80f, col, 40, th);
+            d->AddEllipse(c, ImVec2(s * 0.40f, s * 0.80f), col, 0.0f, 36, th);
+            d->AddLine(ImVec2(c.x - s * 0.80f, c.y), ImVec2(c.x + s * 0.80f, c.y), col, th);
+            break;
+        }
+        case RK_KEYS: {
+            d->AddRect(ImVec2(c.x - s * 0.80f, c.y - s * 0.60f),
+                       ImVec2(c.x + s * 0.80f, c.y + s * 0.60f), col, s * 0.18f, 0, th);
+            for (int r = 0; r < 2; ++r)
+                for (int q = 0; q < 4; ++q)
+                    d->AddCircleFilled(ImVec2(c.x - s * 0.45f + q * s * 0.30f,
+                                              c.y - s * 0.22f + r * s * 0.44f), s * 0.07f, col);
+            break;
+        }
+        case RK_UI: {
+            for (int r = 0; r < 3; ++r) {
+                float y = c.y - s * 0.60f + r * s * 0.60f;
+                d->AddLine(ImVec2(c.x - s * 0.80f, y), ImVec2(c.x + s * 0.80f, y), col, th);
+                float kx = c.x - s * 0.80f + (0.35f + 0.25f * (float)r) * s * 1.6f;
+                d->AddCircleFilled(ImVec2(kx, y), s * 0.16f, col);
+            }
+            break;
+        }
+        case RK_CONFIG: {
+            d->AddRect(ImVec2(c.x - s * 0.72f, c.y - s * 0.80f),
+                       ImVec2(c.x + s * 0.72f, c.y + s * 0.80f), col, s * 0.20f, 0, th);
+            d->AddRectFilled(ImVec2(c.x, c.y - s * 0.80f),
+                             ImVec2(c.x + s * 0.72f, c.y - s * 0.28f), col, s * 0.20f, ImDrawFlags_RoundCornersTopRight);
+            d->AddRectFilled(ImVec2(c.x - s * 0.42f, c.y + s * 0.42f),
+                             ImVec2(c.x + s * 0.42f, c.y + s * 0.58f), col, s * 0.08f);
+            break;
+        }
+        case RK_DEBUG: {
+            d->AddCircle(ImVec2(c.x - s * 0.10f, c.y - s * 0.15f), s * 0.50f, col, 40, th);
+            d->AddLine(ImVec2(c.x + s * 0.26f, c.y + s * 0.05f), ImVec2(c.x + s * 0.72f, c.y + s * 0.52f), col, th);
+            break;
+        }
+        default: break;
+        }
+    }
 
     // fake bloom: several translucent accent halos behind an element
     inline void AccentHalo(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r, float strength = 1.0f) {
@@ -349,49 +438,6 @@ namespace ui {
         ImGui::Dummy(ImVec2(0, GAP - 2));
         return active;
     }
-
-    // top nav pill with a bloom when selected
-    inline bool NavButton(const char* label, bool selected, float width = 0.0f) {
-        ImVec2 sz = ImGui::CalcTextSize(label);
-        ImVec2 btn(width > 0.0f ? width : sz.x + 28.0f, 34.0f);
-        ImVec2 p = ImGui::GetCursorScreenPos();
-
-        ImGui::InvisibleButton(label, btn);
-        bool clicked = ImGui::IsItemClicked();
-        bool hov = ImGui::IsItemHovered();
-
-        ImDrawList* d = ImGui::GetWindowDrawList();
-        float ga = GlassA();
-
-        ImU32 fill, border, text;
-        float bloom = 0.0f;
-        if (selected) {
-            fill = Accent();
-            border = AccentLight(0.9f);
-            text = WHITE;
-            bloom = 0.9f;
-        } else if (hov) {
-            fill = IM_COL32(48, 53, 78, (int)(175.0f * ga));
-            border = Accent(0.65f);
-            text = TXT_MAIN;
-        } else {
-            fill = IM_COL32(28, 31, 47, (int)(150.0f * ga));
-            border = IM_COL32(255, 255, 255, 15);
-            text = TXT_DIM;
-        }
-
-        if (bloom > 0.0f)
-            AccentHalo(d, p, ImVec2(p.x + btn.x, p.y + btn.y), ROUND, bloom);
-
-        d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y), fill, ROUND);
-        d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y * 0.5f),
-                         selected ? AccentLight(0.5f) : IM_COL32(255, 255, 255, 4),
-                         ROUND, ImDrawFlags_RoundCornersTop);
-        d->AddRect(p, ImVec2(p.x + btn.x, p.y + btn.y), border, ROUND, 0, 1.2f);
-        d->AddText(ImVec2(p.x + (btn.x - sz.x) * 0.5f, p.y + (btn.y - sz.y) * 0.5f), text, label);
-
-        return clicked;
-    }
 }
 
 void RenderMenu() {
@@ -472,7 +518,7 @@ void RenderMenu() {
         st.Colors[ImGuiCol_ScrollbarBg]     = ImVec4(0.02f, 0.02f, 0.04f, 0.40f * a);
     }
 
-    ImGui::SetNextWindowSize(ImVec2(720.0f, 540.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(780.0f, 560.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(480.0f, 360.0f), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::Begin("roblox external", nullptr,
@@ -487,7 +533,8 @@ void RenderMenu() {
 
         // soft drop shadow
         d->PushClipRectFullScreen();
-        d->AddShadowRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), IM_COL32(0, 0, 0, 140), 30.0f,
+        d->AddShadowRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y),
+                         IM_COL32(0, 0, 0, (int)(150.0f * ui::GlassA())), 30.0f,
                          ImVec2(0.0f, 12.0f), ImDrawFlags_None, wr);
         d->PopClipRect();
 
@@ -508,9 +555,9 @@ void RenderMenu() {
         ImDrawList* d = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
-        float ga = 1.0f - (ui_transparency / 100.0f);
+        float ga = ui::GlassA();
         float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
-        const float bar_h = 52.0f;
+        const float bar_h = 48.0f;
         float t = ui::AnimT();
 
         ImVec2 a(wp.x, wp.y), b(wp.x + ws.x, wp.y + bar_h);
@@ -596,41 +643,94 @@ void RenderMenu() {
             d->AddLine(ImVec2(x1 + 20, y0 + 10), ImVec2(x1 + 10, y0 + 20), IM_COL32(240, 240, 245, 255), 1.6f);
         }
 
-        ImGui::SetCursorScreenPos(ImVec2(wp.x + 16.0f, wp.y + bar_h + 8.0f));
-
         if (s_minimized) { ImGui::End(); return; }
     }
 
-    // ---- nav bar ----
-    static int s_page = 0;
+    // ---- left rail + content well (custom-ui inspired layout) ----
+    static int    s_page    = 0;
+    static float  s_pill_y  = -1.0f;
+    static float  s_glow[8] = { 0.0f };
+
     const char* kPages[] = { "aimbot", "esp", "misc", "world", "keybinds", "ui", "config", "debug" };
-    {
-        const int   n     = IM_ARRAYSIZE(kPages);
-        const float gap   = 6.0f;
-        const float avail = ImGui::GetContentRegionAvail().x;
+    const int   kIcons[] = { ui::RK_AIMBOT, ui::RK_ESP, ui::RK_MISC, ui::RK_WORLD,
+                             ui::RK_KEYS, ui::RK_UI, ui::RK_CONFIG, ui::RK_DEBUG };
+    const int   n = IM_ARRAYSIZE(kPages);
+    bool hov[8] = { false };
 
-        int per_row = n;
-        float bw = (avail - gap * (per_row - 1)) / per_row;
-        if (bw < 78.0f) {
-            per_row = (n + 1) / 2;
-            bw = (avail - gap * (per_row - 1)) / per_row;
-        }
-        int rows = (n + per_row - 1) / per_row;
+    ImDrawList* d = ImGui::GetWindowDrawList();
+    ImVec2 wp = ImGui::GetWindowPos();
+    ImVec2 ws = ImGui::GetWindowSize();
 
-        ImGui::BeginChild("nav", ImVec2(0, rows * 34.0f + (rows - 1) * gap + 6.0f), false,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        for (int i = 0; i < n; ++i) {
-            if (i % per_row) ImGui::SameLine(0.0f, gap);
-            if (ui::NavButton(kPages[i], s_page == i, bw)) s_page = i;
-        }
-        ImGui::EndChild();
-    }
-    ImGui::Dummy(ImVec2(0, 2));
-
+    const float bar_h    = 48.0f;
     const float footer_h = 28.0f;
-    float content_h = ImGui::GetContentRegionAvail().y - footer_h;
-    if (content_h < 50.0f) content_h = 50.0f;
-    ImGui::BeginChild("content", ImVec2(0, content_h), false);
+    const float rail_w   = 60.0f;
+    const float rail_x   = wp.x + 12.0f;
+    const float rail_y   = wp.y + bar_h + 12.0f;
+    const float rail_bot = wp.y + ws.y - footer_h - 8.0f;
+    const float slot     = 40.0f;
+    const float gap      = 12.0f;
+    const float slot_x   = rail_x + (rail_w - slot) * 0.5f;
+
+    // rail backing
+    ui::LiquidPanel(d, ImVec2(rail_x, rail_y), ImVec2(rail_x + rail_w, rail_bot), 14.0f,
+                    IM_COL32(22, 25, 39, (int)(120.0f * ui::GlassA())),
+                    ui::Accent(0.20f), false, 0.0f, false);
+
+    // hit-test the icon slots (drives clicks, hover glow and tooltips)
+    for (int i = 0; i < n; ++i) {
+        float ty = rail_y + 10.0f + i * (slot + gap);
+        ImGui::SetCursorScreenPos(ImVec2(slot_x, ty));
+        ImGui::InvisibleButton(kPages[i], ImVec2(slot, slot));
+        if (ImGui::IsItemClicked()) s_page = i;
+        hov[i] = ImGui::IsItemHovered();
+        ui::Ease(s_glow[i], (hov[i] && i != s_page) ? 1.0f : 0.0f, 22.0f);
+        if (s_glow[i] > 0.01f)
+            d->AddRectFilled(ImVec2(slot_x, ty), ImVec2(slot_x + slot, ty + slot),
+                             IM_COL32(66, 71, 100, (int)(140.0f * s_glow[i] * ui::GlassA())), 11.0f);
+        if (hov[i]) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(kPages[i]);
+            ImGui::EndTooltip();
+        }
+    }
+
+    // animated accent pill sliding to the active slot
+    {
+        float target_y = rail_y + 10.0f + s_page * (slot + gap);
+        if (s_pill_y < 0.0f) s_pill_y = target_y;
+        ui::Ease(s_pill_y, target_y, 18.0f);
+        ui::AccentHalo(d, ImVec2(slot_x, s_pill_y), ImVec2(slot_x + slot, s_pill_y + slot), 11.0f, 0.9f);
+        d->AddRectFilled(ImVec2(slot_x, s_pill_y), ImVec2(slot_x + slot, s_pill_y + slot),
+                         ui::Accent(0.30f), 11.0f);
+        d->AddRectFilled(ImVec2(slot_x, s_pill_y), ImVec2(slot_x + slot, s_pill_y + slot * 0.5f),
+                         ui::AccentLight(0.26f), 11.0f, ImDrawFlags_RoundCornersTop);
+        d->AddRect(ImVec2(slot_x, s_pill_y), ImVec2(slot_x + slot, s_pill_y + slot),
+                   ui::AccentLight(0.75f), 11.0f, 0, 1.1f);
+    }
+
+    // draw the rail icons (active = white on accent, hovered = bright, idle = dim)
+    for (int i = 0; i < n; ++i) {
+        float ty = rail_y + 10.0f + i * (slot + gap);
+        ImVec2 c(slot_x + slot * 0.5f, ty + slot * 0.5f);
+        float mix = (i == s_page) ? 1.0f : (hov[i] ? 0.62f : 0.0f);
+        ImU32 col = ui::Mix(ui::TXT_DIM, ui::WHITE, mix);
+        ui::RailIcon(d, c, 13.0f, kIcons[i], col);
+    }
+
+    // ---- content well ----
+    float well_x = rail_x + rail_w + 14.0f;
+    float well_y = wp.y + bar_h + 12.0f;
+    float well_w = (wp.x + ws.x - 16.0f) - well_x;
+    float well_h = rail_bot - well_y;
+    if (well_w < 120.0f) well_w = 120.0f;
+    if (well_h < 80.0f)  well_h = 80.0f;
+    ui::LiquidPanel(d, ImVec2(well_x, well_y), ImVec2(well_x + well_w, well_y + well_h), 16.0f,
+                    IM_COL32(20, 23, 36, (int)(110.0f * ui::GlassA())),
+                    ui::Accent(0.16f), false, 0.0f, false);
+
+    ImGui::SetCursorScreenPos(ImVec2(well_x + 16.0f, well_y + 12.0f));
+    ImGui::BeginChild("content", ImVec2(well_w - 32.0f, well_h - 24.0f), false,
+                      ImGuiWindowFlags_NoBackground);
     ImGui::PushItemWidth(-1.0f);
 
         if (s_page == 0) {
@@ -1027,10 +1127,11 @@ void RenderMenu() {
 
     // ---- footer status bar ----
     {
-        ImDrawList* d = ImGui::GetWindowDrawList();
-        ImVec2 p = ImGui::GetCursorScreenPos();
-        float full = ImGui::GetContentRegionAvail().x;
-        d->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y), IM_COL32(255, 255, 255, 14), 1.0f);
+        ImDrawList* fd = ImGui::GetWindowDrawList();
+        float fx = well_x;
+        float fy = wp.y + ws.y - footer_h;
+        float fw = (wp.x + ws.x - 16.0f) - fx;
+        fd->AddLine(ImVec2(fx, fy), ImVec2(fx + fw, fy), IM_COL32(255, 255, 255, 14), 1.0f);
 
         char left[96];
         if (g_base_address) {
@@ -1038,13 +1139,13 @@ void RenderMenu() {
         } else {
             snprintf(left, sizeof(left), "waiting for roblox...");
         }
-        d->AddText(ImVec2(p.x, p.y + 7), ui::TXT_DIM, left);
+        fd->AddText(ImVec2(fx, fy + 7), ui::TXT_DIM, left);
 
         char right[96];
         snprintf(right, sizeof(right), "%d fps  \xc2\xb7  %s toggles menu",
                  (int)ImGui::GetIO().Framerate, KeyName(menu_toggle_keybind));
         ImVec2 rts = ImGui::CalcTextSize(right);
-        d->AddText(ImVec2(p.x + full - rts.x, p.y + 7), ui::TXT_DIM, right);
+        fd->AddText(ImVec2(fx + fw - rts.x, fy + 7), ui::TXT_DIM, right);
     }
 
     ImGui::End();

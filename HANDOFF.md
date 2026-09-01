@@ -50,7 +50,7 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | Feature | Status | Notes |
 |---|---|---|
 | Walkspeed | ✅ **Confirmed working** | Writes `Humanoid::Walkspeed`. The one known-good write path. |
-| ESP boxes | ⚠️ Works, slightly high | Box bottom floats above the feet — see §4.2 |
+| ESP boxes | ⚠️ Rewritten, re-test | Box now uses canonical sizes + one world AABB (no Size/Rotation reads) — see §4.2 |
 | ESP extras (name/health/distance/tool/skeleton/china hat) | ✅ **Confirmed working** | |
 | Chams (regular) | ✅ **Confirmed working** | Does **not** use the deleted mesh backend |
 | Aimbot + FOV circle | ✅ **Confirmed working** | Needs a keybind set |
@@ -75,7 +75,7 @@ korblox/rage, 3D ESP preview, mesh chams + memory mesh chams (see §5).
 roblox external/
   main.cpp        entry (WinMain), FeatureLoop thread, AttachLoop (auto-reconnect), render_ui()
   overlay.hpp     overlay window, D3D11, ImGui init + theme, input thread, tray icon, taskbar window
-  menu.cpp        entire GUI: ui:: widgets, nav bar, all pages
+  menu.cpp        entire GUI: ui:: widgets, left icon rail + content well, all pages
   globals.h       every setting as an inline global + LogLine() + g_request_exit
   memory.h/.cpp   RPM/WPM wrappers, instance struct, name/classname/children readers
   process.h/.cpp  FindRoblox(), GetRobloxWindow()
@@ -284,9 +284,11 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
-(wip)  Liquid-glass UI remake: layered gradients, accent bloom, animated shimmer
-       + aurora, glowing toggles/sliders/nav; ESP box rebuilt from canonical
-       sizes (no Size/Rotation reads); debug "probe primitive floats" button
+(wip)  UI relayout inspired by ff0l/custom-ui-1: left icon rail + animated accent
+       pill + content well, eased hover glows + reveal fade, vector rail glyphs;
+       ESP box rebuilt from canonical sizes (no Size/Rotation reads); debug
+       "probe primitive floats" button
+87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
        infinite jump; skybox periodic reapply; delete uncompiled ImGui extras
