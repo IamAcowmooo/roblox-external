@@ -82,12 +82,12 @@ namespace ui {
     static const ImU32 TXT_DIM   = IM_COL32(140, 143, 156, 255);
     static const ImU32 WHITE     = IM_COL32(255, 255, 255, 255);
 
-    // uniform metrics so every row lines up
-    static constexpr float ROW_H     = 34.0f;
-    static constexpr float SLIDER_H  = 46.0f;
-    static constexpr float PAD_X     = 12.0f;
-    static constexpr float GAP       = 7.0f;
-    static constexpr float ROUND     = 9.0f;
+    // uniform metrics so every row lines up (tighter than before - compact look)
+    static constexpr float ROW_H     = 29.0f;
+    static constexpr float SLIDER_H  = 40.0f;
+    static constexpr float PAD_X     = 10.0f;
+    static constexpr float GAP       = 5.0f;
+    static constexpr float ROUND     = 8.0f;
 
     // how much the glass lets through (driven by the transparency slider)
     inline float GlassA() { return 1.0f - (ui_transparency / 100.0f); }
@@ -123,18 +123,17 @@ namespace ui {
     // translucent element body
     inline ImU32 PanelBase() { return IM_COL32(25, 28, 42, (int)(120.0f * GlassA())); }
 
-    // frosted panel: soft shadow + translucent fill + top sheen + hairline border
+    // frosted panel: soft shadow + vertical glass gradient + top catch-light + hairline border
     inline void GlassPanel(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r,
-                           ImU32 base, ImU32 border, bool shadow = false, float sheen = 6.0f) {
+                           ImU32 base, ImU32 border, bool shadow = false, float sheen = 10.0f) {
         if (shadow)
-            d->AddShadowRect(a, b, IM_COL32(0, 0, 0, 110), 16.0f, ImVec2(0.0f, 4.0f), ImDrawFlags_None, r);
-        d->AddRectFilled(a, b, base, r);
-        float h = b.y - a.y;
-        if (h > 4.0f) {
-            d->AddRectFilled(a, ImVec2(b.x, a.y + h * 0.42f), IM_COL32(255, 255, 255, (int)sheen), r, ImDrawFlags_RoundCornersTop);
-            d->AddLine(ImVec2(a.x + r, a.y + 1.0f), ImVec2(b.x - r, a.y + 1.0f), IM_COL32(255, 255, 255, (int)(sheen * 3.0f)), 1.0f);
-        }
-        d->AddRect(a, b, border, r, 0, 1.0f);
+            d->AddShadowRect(a, b, IM_COL32(0, 0, 0, 120), 18.0f, ImVec2(0.0f, 4.0f), ImDrawFlags_None, r);
+        ImU32 top    = Mix(base, IM_COL32(255, 255, 255, (int)sheen), 0.55f);
+        ImU32 bottom = Mix(base, IM_COL32(8, 9, 16, 90), 0.45f);
+        d->AddRectFilledMultiColor(a, b, top, top, bottom, bottom);
+        d->AddLine(ImVec2(a.x + r, a.y + 0.5f), ImVec2(b.x - r, a.y + 0.5f),
+                   IM_COL32(255, 255, 255, (int)(sheen * 3.5f)), 1.0f);
+        d->AddRect(a, b, border, r, 0, 1.2f);
     }
 
     // section header: accent bar + uppercase caption + faint rule
@@ -312,10 +311,25 @@ void RenderMenu() {
         st.FrameRounding  = r;
         st.PopupRounding  = r;
 
+        // remember the accent we're overwriting, and restore it the moment the
+        // rainbow switch is turned back off (otherwise it stays on the last hue)
+        static bool s_rainbow_was_on = false;
+        static float s_prev_accent[3] = { 0.78f, 0.08f, 0.08f };
         if (ui_rainbow) {
+            if (!s_rainbow_was_on) {
+                s_prev_accent[0] = ui_accent_color[0];
+                s_prev_accent[1] = ui_accent_color[1];
+                s_prev_accent[2] = ui_accent_color[2];
+                s_rainbow_was_on = true;
+            }
             float t = (float)ImGui::GetTime() * 0.25f;
             ImGui::ColorConvertHSVtoRGB(t - (long)t, 1.0f, 1.0f,
                                         ui_accent_color[0], ui_accent_color[1], ui_accent_color[2]);
+        } else if (s_rainbow_was_on) {
+            s_rainbow_was_on = false;
+            ui_accent_color[0] = s_prev_accent[0];
+            ui_accent_color[1] = s_prev_accent[1];
+            ui_accent_color[2] = s_prev_accent[2];
         }
 
         ImVec4 accent(ui_accent_color[0], ui_accent_color[1], ui_accent_color[2], 1.0f);
@@ -323,6 +337,8 @@ void RenderMenu() {
         st.Colors[ImGuiCol_CheckMark]           = accent;
         st.Colors[ImGuiCol_SliderGrab]          = ImVec4(accent.x, accent.y, accent.z, 0.55f);
         st.Colors[ImGuiCol_SliderGrabActive]    = accent;
+        st.Colors[ImGuiCol_FrameBgHovered]      = ImVec4(accent.x, accent.y, accent.z, 0.18f);
+        st.Colors[ImGuiCol_FrameBgActive]       = ImVec4(accent.x, accent.y, accent.z, 0.32f);
         st.Colors[ImGuiCol_Header]              = ImVec4(accent.x, accent.y, accent.z, 0.22f);
         st.Colors[ImGuiCol_HeaderHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.45f);
         st.Colors[ImGuiCol_HeaderActive]        = accent;
@@ -363,8 +379,8 @@ void RenderMenu() {
 
     // start at a comfortable size, stay freely resizable, and never let it be
     // dragged smaller than the tab bar needs
-    ImGui::SetNextWindowSize(ImVec2(780.0f, 640.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 400.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(720.0f, 540.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(480.0f, 360.0f), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::Begin("roblox external", nullptr,
                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
@@ -396,7 +412,7 @@ void RenderMenu() {
         ImVec2 ws = ImGui::GetWindowSize();
         float ga = 1.0f - (ui_transparency / 100.0f);
         float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
-        const float bar_h = 56.0f;
+        const float bar_h = 44.0f;
 
         ImVec2 a(wp.x, wp.y), b(wp.x + ws.x, wp.y + bar_h);
         d->AddRectFilled(a, b, IM_COL32(21, 24, 38, (int)(215.0f * ga)), wr, ImDrawFlags_RoundCornersTop);
@@ -414,14 +430,14 @@ void RenderMenu() {
 
         // brand
         {
-            ImVec2 bp(wp.x + 16.0f, wp.y);
-            d->AddRectFilled(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 40), ui::Accent(), 6.0f);
-            d->AddRectFilled(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 28), ui::AccentLight(0.6f), 6.0f, ImDrawFlags_RoundCornersTop);
-            d->AddRect(ImVec2(bp.x, bp.y + 16), ImVec2(bp.x + 24, bp.y + 40), ui::AccentLight(0.9f), 6.0f, 0, 1.0f);
-            d->AddCircleFilled(ImVec2(bp.x + 12, bp.y + 28), 3.5f, ui::WHITE);
+            ImVec2 bp(wp.x + 14.0f, wp.y);
+            d->AddRectFilled(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 32), ui::Accent(), 5.0f);
+            d->AddRectFilled(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 22), ui::AccentLight(0.6f), 5.0f, ImDrawFlags_RoundCornersTop);
+            d->AddRect(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 32), ui::AccentLight(0.9f), 5.0f, 0, 1.0f);
+            d->AddCircleFilled(ImVec2(bp.x + 10, bp.y + 22), 3.0f, ui::WHITE);
 
-            d->AddText(ImVec2(bp.x + 34, bp.y + 15), IM_COL32(238, 240, 247, 255), "ROBLOX EXTERNAL");
-            d->AddText(ImVec2(bp.x + 34, bp.y + 33), ui::TXT_DIM, "usermode overlay  \xc2\xb7  v0.736");
+            d->AddText(ImVec2(bp.x + 28, bp.y + 13), IM_COL32(238, 240, 247, 255), "ROBLOX EXTERNAL");
+            d->AddText(ImVec2(bp.x + 28, bp.y + 27), ui::TXT_DIM, "usermode overlay  \xc2\xb7  v0.736");
         }
 
         // status chip
@@ -804,7 +820,7 @@ void RenderMenu() {
                 ui_rounded_corners = true;
                 ui_corner_radius = 14.0f;
                 ui_rainbow = false;
-                ui_accent_color[0] = 0.42f; ui_accent_color[1] = 0.47f; ui_accent_color[2] = 0.98f;
+                ui_accent_color[0] = 0.78f; ui_accent_color[1] = 0.08f; ui_accent_color[2] = 0.08f;
             }
         }
 

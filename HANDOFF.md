@@ -1,8 +1,7 @@
 # HANDOFF / MASTER NOTES
 
 **Repo:** `Glockerz/roblox-external`
-**Branch:** `arena/01a05dd9-roblox-external` (18 commits ahead of `main`; `main` untouched by request)
-**Last commit:** `79a5dba`
+**Branch:** `arena/01a05e8a-roblox-external` (`main` untouched by request)
 **Target client:** `version-f5a60436d48947d3` (`0.736.0.7361348`)
 
 A Roblox usermode **external** cheat. It never injects — it reads/writes the Roblox
@@ -113,7 +112,7 @@ memory-only features from `FeatureLoop()`.
 
 ### 4.1 Flight + infinite jump — THE blocker
 
-Four mechanisms tried, all failed:
+Five mechanisms tried:
 
 | # | Approach | Result |
 |---|---|---|
@@ -121,6 +120,16 @@ Four mechanisms tried, all failed:
 | 2 | Write `Primitive::Position` | **Sinks through the floor** (collision solver resolves the overlap) |
 | 3 | `PlatformStand = true` + velocity | Ragdolls, still falls |
 | 4 | Position + collisions disabled, self-integrated arc | Still broken |
+| 5 | Velocity-driven flight + engine-driven jump | Unverified (see below) |
+
+**Latest attempt (unverified, needs the debug-tab write test):**
+- **Flight** now writes the *desired* `AssemblyLinearVelocity` (move dir × speed) every
+  frame instead of zeroing it, so the solver agrees with the position write instead of
+  fighting it — collisions still disabled while flying.
+- **Infinite jump** no longer writes position/velocity at all: it writes
+  `Humanoid::Jump = true` + `JumpPower` each frame space is held, so the engine performs
+  the jump itself. (This mirrors the one mechanism known to work — walkspeed — which is
+  also a Humanoid-field write, not a Primitive write.)
 
 **Key evidence:** walkspeed (a **Humanoid** field write) works. Everything that writes a
 **Primitive** field fails. That points at either a wrong `Primitive::*` offset or an
@@ -140,12 +149,13 @@ Each prints one line (also in the log tab). Interpretation:
 - `delta 10.00 ... LANDED` and you visibly teleport → writes are fine; the bug is in the
   feature logic and is then straightforward to fix.
 
-### 4.2 ESP boxes sit slightly high
-Most likely `Primitive::Size (0x1bc)` reads ~0, collapsing all 8 corners onto each part's
-centre — the feet then contribute only a centre point, lifting the box bottom by half a foot.
-A 1×1×1 fallback is in place, and the debug tab shows **`part size read`**. If that reads
-zeros, `Primitive::Size` is wrong. If it reads real values (~`2.00, 2.00, 1.00`), look at
-head/hat extent instead.
+### 4.2 ESP boxes sit slightly high / float at distance
+`Primitive::Size (0x1bc)` reads ~0 on this build, so each part's 8 corners collapsed onto
+its centre and the box shrank + drifted above the character (worse at distance). The old
+1×1×1 fallback is replaced with **canonical Roblox body-part sizes** keyed by part name
+(`esp.cpp → CanonicalPartSize()`): Head 2×1×1, torso 2×2×1, arms/legs 1×2×1, hands/feet
+1×1×1. The real `Size` read is still preferred when it's non-zero. The debug tab's
+**`part size read`** tells you which path is active.
 
 ### 4.3 FOV changer
 Was writing **degrees** into a field Roblox stores in **radians** — 70 became ~4010°,
@@ -155,7 +165,9 @@ range. Click teleport had the same bug and was fixed too. Both unverified.
 ### 4.4 Skybox changer
 It was doing: invalidate → write textures → set `SkyValid`/`LightingValid` back to **true**,
 which tells the renderer its cached sky is still valid so it never re-uploads. Now it
-invalidates *after* writing. Unverified. The world tab prints a live status string
+invalidates *after* writing, **and** it re-applies the six face strings every 2.5s while
+enabled (a core script or the renderer reverting the sky can no longer permanently undo
+it). Still unverified in-game. The world tab prints a live status string
 (`skybox_debug_msg`) — read it: `No Sky in game`, `FAIL: RenderView invalid`,
 `Skybox applied (...)` each point somewhere different.
 
@@ -254,16 +266,21 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 - ~~`.vcxproj.filters`~~ → regenerated (imgui + per-feature folders).
 - ~~Clipper2 vendor tree~~ → removed entirely (see §7). The only user
   (`DrawMergedPoly` in esp.cpp) was dead code left over from the mesh backend.
-- Remaining idea: `imgui/imgui_demo.cpp`, `imgui/addons/` and `imgui/TextEditor.*`
-  are vendored but not compiled — safe to delete if you want a slimmer tree.
+- ~~Uncompiled vendored ImGui extras~~ → removed: `imgui_demo.cpp`, `imadd.cpp`,
+  `TextEditor.*`, `imgui_toggle*`, `addons/`, `includes.h`, `imgui_offset_rect.h`,
+  `misc/freetype/`. The whole repo is now C/C++ only and the ImGui tree contains
+  exactly what the project compiles.
 
 ## 10. Changelog (this branch)
 
 ```
-(wip)  Glassmorphic UI overhaul: frosted panels, soft shadows, indigo accent,
+(wip)  Fix rainbow accent not resetting; red accent restored; compact + glassier
+       UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
+       infinite jump; skybox periodic reapply; delete uncompiled ImGui extras
+5897afd Glassmorphic UI overhaul: frosted panels, soft shadows, indigo accent,
        new title bar + status chip + footer; rename namespace -> overlay; fold
        overlay.h; regenerate .vcxproj.filters; fix KeyName dangling pointer
-(wip)  Remove Clipper2 vendor tree (C++/C#/Delphi/DLL) + dead DrawMergedPoly,
+5897afd Remove Clipper2 vendor tree (C++/C#/Delphi/DLL) + dead DrawMergedPoly,
        dead esp.cpp helpers and unused globals; prune junk offsets
 79a5dba Remove orphaned mesh cham backend and all references
 c24c828 Revert mesh backend enablement (headers incompatible), drop /GS- sdl conflict
@@ -289,8 +306,9 @@ bf8e898 Change menu toggle key from INSERT to HOME
 
 ## 11. TL;DR for whoever picks this up
 
-1. **Run the two write tests in the debug tab.** Flight, infinite jump and click teleport
-   are all blocked on that one measurement. Don't write more movement code before you have it.
+1. **Run the two write tests in the debug tab.** Click teleport (and the position-corrector
+   half of flight) are still blocked on that measurement. Infinite jump no longer depends on
+   it (it writes Humanoid fields now), so test it separately.
 2. If the position write doesn't stick → re-dump `Primitive::Position` and `Primitive::Size`.
 3. Check `part size read` in the same tab to settle the ESP box offset.
 4. Read the skybox status string in the world tab before touching that feature.

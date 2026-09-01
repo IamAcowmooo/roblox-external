@@ -98,6 +98,27 @@ namespace features {
         return true;
     }
 
+    // Canonical Roblox body-part sizes (studs). This client build reports ~0 from
+    // Primitive::Size, so we fall back to these instead of letting a zero-sized
+    // part collapse onto its centre point - that's what made the box float above
+    // the character and shrink as they got further away.
+    static void CanonicalPartSize(const char* name, Vec3& out) {
+        if (!name) { out = { 1, 1, 1 }; return; }
+        if (!strcmp(name, "Head"))                        { out = { 2, 1, 1 }; return; }
+        if (!strcmp(name, "HumanoidRootPart"))            { out = { 2, 2, 1 }; return; }
+        if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { out = { 2, 2, 1 }; return; }
+        if (!strcmp(name, "LowerTorso"))                  { out = { 2, 1, 1 }; return; }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
+            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
+            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
+            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
+            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand") ||
+            !strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
+        out = { 1, 1, 1 };
+    }
+
     static bool ComputeBoxForPrimitives(const cache::EspEntity& entity, const Matrix4& view, const Vec2& viewport, Box2D& out_box) {
         if (entity.primitive_count == 0) {
             out_box.valid = false;
@@ -119,11 +140,10 @@ namespace features {
             if (!ReadVec3(primitive + Offsets::Primitive::Size, size)) continue;
 
             // A part whose size reads back as ~0 collapses its 8 corners onto the
-            // part's centre. With the feet contributing only their centre point the
-            // whole box ends up sitting slightly above the character, so fall back
-            // to a sane default extent instead.
+            // part's centre, which makes the whole box float and shrink with
+            // distance. Fall back to the part's canonical body size instead.
             if (size.x < 0.05f && size.y < 0.05f && size.z < 0.05f)
-                size = { 1.0f, 1.0f, 1.0f };
+                CanonicalPartSize(entity.part_names[i], size);
 
             float hx = size.x * 0.5f;
             float hy = size.y * 0.5f;

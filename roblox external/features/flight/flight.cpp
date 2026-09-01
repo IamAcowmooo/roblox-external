@@ -21,10 +21,12 @@ namespace features {
     //               which is the "bugged into the floor" behaviour.
     //   attempt 3 - PlatformStand + velocity      -> ragdolls, still falls.
     //
-    // So: drive the position ourselves AND turn the character's collisions off
-    // while flying, so there is nothing for the solver to resolve. Collisions are
-    // restored the moment you stop. This is fully under our control and does not
-    // depend on the engine cooperating.
+    // So: drive the position ourselves, keep the character's collisions off while
+    // flying (so there is nothing for the solver to resolve) AND write the desired
+    // AssemblyLinearVelocity every frame instead of zeroing it - a zero velocity
+    // lets gravity win between writes, while a matching velocity makes the solver
+    // agree with the position write instead of fighting it. Collisions are restored
+    // the moment you stop.
     // ---------------------------------------------------------------------
 
     struct FVec3 {
@@ -179,18 +181,24 @@ namespace features {
         if (GetAsyncKeyState(VK_LCONTROL) & 0x8000) dir = dir - FVec3{ 0, 1, 0 };
         if (GetAsyncKeyState(VK_LSHIFT)   & 0x8000) dir = dir - FVec3{ 0, 1, 0 };
 
+        FVec3 vel{};
         if (dir.magnitude() > 0.0f) {
             dir = dir.normalize();
             s_pos[0] += dir.x * flight_value * dt;
             s_pos[1] += dir.y * flight_value * dt;
             s_pos[2] += dir.z * flight_value * dt;
+            vel = dir * flight_value;   // let the assembly solver carry us too
         }
 
         write_raw(lp.hrp_primitive + Offsets::Primitive::Position, s_pos, sizeof(s_pos));
 
-        // kill any momentum the engine tries to build up underneath us
-        float zero[3] = { 0, 0, 0 };
-        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, zero, sizeof(zero));
-        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, zero, sizeof(zero));
+        // Method 2 - instead of zeroing velocity (which just lets gravity win in
+        // between our writes and fight the position write), tell the solver where
+        // we're going. With no input vel stays 0 so the character hovers in place.
+        float vel_arr[3] = { vel.x, vel.y, vel.z };
+        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel_arr, sizeof(vel_arr));
+
+        float ang[3] = { 0, 0, 0 };
+        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, ang, sizeof(ang));
     }
 }

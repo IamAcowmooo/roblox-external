@@ -522,9 +522,9 @@ namespace overlay
 
         ImVec4* c = s.Colors;
 
-        const ImVec4 accent      = ImVec4(0.42f, 0.47f, 0.98f, 1.00f);   // indigo
-        const ImVec4 accent_dim  = ImVec4(0.42f, 0.47f, 0.98f, 0.55f);
-        const ImVec4 accent_soft = ImVec4(0.42f, 0.47f, 0.98f, 0.24f);
+        const ImVec4 accent      = ImVec4(0.78f, 0.08f, 0.08f, 1.00f);   // crimson red
+        const ImVec4 accent_dim  = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
+        const ImVec4 accent_soft = ImVec4(0.78f, 0.08f, 0.08f, 0.24f);
         const ImVec4 glass       = ImVec4(0.055f, 0.060f, 0.090f, 0.92f);
         const ImVec4 glass_deep  = ImVec4(0.035f, 0.038f, 0.058f, 0.95f);
         const ImVec4 glass_soft  = ImVec4(0.16f, 0.17f, 0.24f, 0.40f);
@@ -535,12 +535,12 @@ namespace overlay
         c[ImGuiCol_WindowBg]             = glass;
         c[ImGuiCol_ChildBg]              = ImVec4(0.10f, 0.11f, 0.16f, 0.28f);
         c[ImGuiCol_PopupBg]              = glass_deep;
-        c[ImGuiCol_Border]               = ImVec4(0.42f, 0.47f, 0.98f, 0.38f);
+        c[ImGuiCol_Border]               = ImVec4(0.78f, 0.08f, 0.08f, 0.38f);
         c[ImGuiCol_BorderShadow]         = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 
         c[ImGuiCol_FrameBg]              = glass_soft;
-        c[ImGuiCol_FrameBgHovered]       = ImVec4(0.42f, 0.47f, 0.98f, 0.18f);
-        c[ImGuiCol_FrameBgActive]        = ImVec4(0.42f, 0.47f, 0.98f, 0.32f);
+        c[ImGuiCol_FrameBgHovered]       = ImVec4(0.78f, 0.08f, 0.08f, 0.18f);
+        c[ImGuiCol_FrameBgActive]        = ImVec4(0.78f, 0.08f, 0.08f, 0.32f);
 
         c[ImGuiCol_TitleBg]              = glass_deep;
         c[ImGuiCol_TitleBgActive]        = glass_deep;
@@ -557,8 +557,8 @@ namespace overlay
         c[ImGuiCol_SliderGrabActive]     = accent;
 
         c[ImGuiCol_Button]               = glass_soft;
-        c[ImGuiCol_ButtonHovered]        = ImVec4(0.42f, 0.47f, 0.98f, 0.30f);
-        c[ImGuiCol_ButtonActive]         = ImVec4(0.42f, 0.47f, 0.98f, 0.55f);
+        c[ImGuiCol_ButtonHovered]        = ImVec4(0.78f, 0.08f, 0.08f, 0.30f);
+        c[ImGuiCol_ButtonActive]         = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
 
         c[ImGuiCol_Header]               = accent_soft;
         c[ImGuiCol_HeaderHovered]        = accent_dim;
@@ -574,14 +574,14 @@ namespace overlay
 
         c[ImGuiCol_Tab]                  = ImVec4(0.12f, 0.13f, 0.19f, 0.80f);
         c[ImGuiCol_TabHovered]           = accent_dim;
-        c[ImGuiCol_TabActive]            = ImVec4(0.42f, 0.47f, 0.98f, 0.85f);
+        c[ImGuiCol_TabActive]            = ImVec4(0.78f, 0.08f, 0.08f, 0.85f);
         c[ImGuiCol_TabUnfocused]         = ImVec4(0.10f, 0.11f, 0.16f, 0.80f);
-        c[ImGuiCol_TabUnfocusedActive]   = ImVec4(0.42f, 0.47f, 0.98f, 0.60f);
+        c[ImGuiCol_TabUnfocusedActive]   = ImVec4(0.78f, 0.08f, 0.08f, 0.60f);
 
         c[ImGuiCol_PlotLines]            = accent;
-        c[ImGuiCol_PlotLinesHovered]     = ImVec4(0.70f, 0.75f, 1.00f, 1.00f);
+        c[ImGuiCol_PlotLinesHovered]     = ImVec4(1.00f, 0.45f, 0.50f, 1.00f);
         c[ImGuiCol_PlotHistogram]        = accent;
-        c[ImGuiCol_PlotHistogramHovered] = ImVec4(0.70f, 0.75f, 1.00f, 1.00f);
+        c[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.45f, 0.50f, 1.00f);
 
         c[ImGuiCol_TextSelectedBg]       = accent_dim;
         c[ImGuiCol_DragDropTarget]       = accent;

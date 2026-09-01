@@ -20,6 +20,7 @@ namespace features {
     static uint64_t last_place_id = 0;
     static std::chrono::steady_clock::time_point place_change_time;
     static bool place_just_changed = false;
+    static std::chrono::steady_clock::time_point last_apply_time{};
 
     struct AllocatedFace {
         uintptr_t string_addr;
@@ -213,9 +214,15 @@ namespace features {
         bool players_returned = (has_players && !had_players);
 
         if (skybox_written && !type_changed && !players_returned && last_sky_address != 0) {
-            std::snprintf(skybox_debug_msg, sizeof(skybox_debug_msg), "Skybox active (%s)", k_skybox_names[skybox_type]);
-            had_players = has_players;
-            return;
+            auto since = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - last_apply_time).count();
+            if (since < 2500) {
+                std::snprintf(skybox_debug_msg, sizeof(skybox_debug_msg), "Skybox active (%s)", k_skybox_names[skybox_type]);
+                had_players = has_players;
+                return;
+            }
+            // periodic refresh: fall through and rewrite, so a core script or the
+            // renderer reverting the sky can never permanently undo us
         }
 
         had_players = has_players;
@@ -329,6 +336,7 @@ namespace features {
         }
 
         skybox_written = true;
+        last_apply_time = std::chrono::steady_clock::now();
         std::snprintf(skybox_debug_msg, sizeof(skybox_debug_msg), "Skybox applied (%s)", k_skybox_names[skybox_type]);
 
         // Invalidate AFTER writing, not before-and-then-revalidate. Setting these

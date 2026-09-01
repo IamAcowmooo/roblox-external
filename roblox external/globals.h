@@ -95,7 +95,7 @@ inline float ui_transparency = 6.0f;
 inline bool  ui_rounded_corners = true;
 inline float ui_corner_radius = 14.0f;
 inline bool  ui_rainbow = false;
-inline float ui_accent_color[3] = { 0.42f, 0.47f, 0.98f };
+inline float ui_accent_color[3] = { 0.78f, 0.08f, 0.08f };
 
 inline bool infinite_jump_enabled = false;
 inline float infinite_jump_power = 50.0f;
