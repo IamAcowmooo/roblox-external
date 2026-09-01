@@ -625,7 +625,7 @@ void RenderMenu() {
 
         if (s_page == 2) {
             ui::PageHeader("misc", "movement and player features");
-            ImGui::TextDisabled("set keys for these in the keybinds tab");
+            ImGui::TextDisabled("binds are optional - 'none' means always on while enabled");
             ImGui::Separator();
             ui::Toggle("noclip", &noclip_enabled);
             ImGui::Separator();
@@ -640,7 +640,10 @@ void RenderMenu() {
             }
             ImGui::Separator();
             ui::Toggle("click teleport", &click_teleport_enabled);
-            if (click_teleport_enabled) ui::Slider("tp distance", &click_teleport_distance, 5.0f, 200.0f, "%.0f studs");
+            if (click_teleport_enabled) {
+                ui::Slider("tp distance", &click_teleport_distance, 5.0f, 200.0f, "%.0f studs");
+                ImGui::TextDisabled("left-click in-game to teleport there (no keybind)");
+            }
             ImGui::Separator();
             ui::Toggle("infinite jump", &infinite_jump_enabled);
             if (infinite_jump_enabled) {
@@ -652,7 +655,7 @@ void RenderMenu() {
             if (fov_changer_enabled) ui::Slider("field of view", &fov_value, 20.0f, 120.0f);
             ImGui::Separator();
             ui::Toggle("inventory checker", &inventory_checker_enabled);
-            if (inventory_checker_enabled) ImGui::TextDisabled("hold the key with your cursor over a player");
+            if (inventory_checker_enabled) ImGui::TextDisabled("cursor over a player (or hold the key if bound)");
             ImGui::Separator();
         }
 
@@ -688,12 +691,11 @@ void RenderMenu() {
             keybind_button("noclip", noclip_keybind);
             keybind_button("walkspeed", walkspeed_keybind);
             keybind_button("flight", flight_keybind);
-            keybind_button("click teleport", click_teleport_keybind);
             keybind_button("inventory checker", inventory_checker_keybind);
             ImGui::Separator();
 
-            ImGui::TextDisabled("all binds are hold-to-use except click teleport,");
-            ImGui::TextDisabled("which fires once per press.");
+            ImGui::TextDisabled("leave a bind as 'none' to keep the feature");
+            ImGui::TextDisabled("always on; set a key to hold-to-use instead.");
         }
 
         if (s_page == 7) {
@@ -976,8 +978,7 @@ void RenderMenu() {
         fd->AddText(ImVec2(fx, fy + 7), ui::TXT_DIM, left);
 
         char right[96];
-        snprintf(right, sizeof(right), "%d fps  \xc2\xb7  %s toggles menu",
-                 (int)ImGui::GetIO().Framerate, KeyName(menu_toggle_keybind));
+        snprintf(right, sizeof(right), "%s toggles menu", KeyName(menu_toggle_keybind));
         ImVec2 rts = ImGui::CalcTextSize(right);
         fd->AddText(ImVec2(fx + fw - rts.x, fy + 7), ui::TXT_DIM, right);
     }

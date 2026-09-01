@@ -112,16 +112,19 @@ namespace features {
     }
 
     void RunFlight() {
-        if (!flight_enabled || flight_keybind == 0) {
+        if (!flight_enabled) {
             StopFlying();
             s_key_was_down = false;
             return;
         }
 
-        bool key_down = (GetAsyncKeyState(flight_keybind) & 0x8000) != 0;
+        // no keybind set -> fly whenever enabled; otherwise the key drives it
+        bool key_down = (flight_keybind == 0) || ((GetAsyncKeyState(flight_keybind) & 0x8000) != 0);
 
         bool want = s_active;
-        if (flight_hold_mode) {
+        if (flight_keybind == 0) {
+            want = true;                              // always on while enabled
+        } else if (flight_hold_mode) {
             want = key_down;
         } else if (key_down && !s_key_was_down) {
             want = !s_active;

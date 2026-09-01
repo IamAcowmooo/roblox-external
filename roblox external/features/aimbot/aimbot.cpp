@@ -280,14 +280,15 @@ namespace features {
     }
 
     void RunAimbot() {
-        if (!aimbot_enabled || aimbot_keybind == 0) {
+        if (!aimbot_enabled) {
             locked_head = 0;
             locked_player = 0;
             was_key_held = false;
             return;
         }
 
-        bool key_held = (GetAsyncKeyState(aimbot_keybind) & 0x8000) != 0;
+        // no keybind set -> always active while enabled; otherwise hold-to-use
+        bool key_held = (aimbot_keybind == 0) || ((GetAsyncKeyState(aimbot_keybind) & 0x8000) != 0);
 
         if (!key_held) {
             locked_head = 0;
@@ -303,9 +304,7 @@ namespace features {
             AimVec2 viewport{};
             if (!GetViewData(view, viewport)) return;
 
-            POINT cur;
-            GetCursorPos(&cur);
-            AimVec2 fov_center = { (float)cur.x, (float)cur.y };
+            AimVec2 fov_center = { viewport.x * 0.5f, viewport.y * 0.5f };
 
             uintptr_t found_part = 0;
             uintptr_t found_player = 0;
@@ -323,9 +322,7 @@ namespace features {
             AimVec2 viewport{};
             if (!GetViewData(view, viewport)) return;
 
-            POINT cur;
-            GetCursorPos(&cur);
-            AimVec2 fov_center = { (float)cur.x, (float)cur.y };
+            AimVec2 fov_center = { viewport.x * 0.5f, viewport.y * 0.5f };
 
             uintptr_t found_part = 0;
             uintptr_t found_player = 0;
@@ -373,9 +370,11 @@ namespace features {
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
         if (!draw) return;
 
-        POINT cur;
-        GetCursorPos(&cur);
-        draw->AddCircle(ImVec2((float)cur.x, (float)cur.y), fov_size, IM_COL32(255, 255, 255, 180), 64, 1.0f);
+        // fixed at the centre of the screen (the crosshair), not the mouse
+        ImVec2 center = ImGui::GetIO().DisplaySize;
+        center.x *= 0.5f;
+        center.y *= 0.5f;
+        draw->AddCircle(center, fov_size, IM_COL32(255, 255, 255, 180), 64, 1.0f);
     }
 }
 

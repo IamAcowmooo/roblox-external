@@ -53,14 +53,14 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | ESP boxes | ⚠️ Rewritten, re-test | Box now uses canonical sizes + one world AABB (no Size/Rotation reads) — see §4.2 |
 | ESP extras (name/health/distance/tool/skeleton/china hat) | ✅ **Confirmed working** | |
 | Chams (regular) | ✅ **Confirmed working** | Does **not** use the deleted mesh backend |
-| Aimbot + FOV circle | ✅ **Confirmed working** | Needs a keybind set |
-| Noclip | ✅ **Confirmed working** | Needs a keybind set |
+| Aimbot + FOV circle | ✅ **Confirmed working** | No keybind = always on; FOV circle fixed to screen centre |
+| Noclip | ✅ **Confirmed working** | No keybind = always on |
 | Hitbox expander | ❓ Unverified | |
-| Inventory checker | ✅ **Confirmed working** | Hold key with cursor over a player |
+| Inventory checker | ✅ **Confirmed working** | Cursor over a player (keybind optional) |
 | FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
 | **Infinite jump** | ✅ **Confirmed working** | Edge-triggered: each tap of space writes `AssemblyLinearVelocity.y = jump power` — jumps chain mid-air (hold no longer rockets up) |
 | **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
-| **Click teleport** | ⚠️ Partly working | TP'd to cursor in 1st person; 3rd person + windowed fixed but unverified |
+| **Click teleport** | ⚠️ Partly working | Now fires on **left-click** (no keybind); ray-through-cursor fix unverified |
 | **Skybox changer** | ❌ **Broken** | Invalidation-order fix applied, unverified — see §4.4 |
 | Config save/load/rename | ❓ Unverified | Files under `GetConfigDir()` |
 
@@ -303,7 +303,11 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        both positions. Second probe re-confirmed the layout; velocity write
        confirmed working; infinite jump rebuilt as edge-triggered velocity
        impulses (per-tap, mid-air chainable) instead of hold-to-ascend.
-       both positions; write-test button reports both deltas.
+(wip)  Keybinds now optional: leave a bind as 'none' to keep the feature
+       always-on (aimbot/noclip/walkspeed/flight/inventory checker);
+       click teleport fires on left-click (no keybind, ignored while menu
+       open); removed the inaccurate FPS counter (overlay chip + footer);
+       aimbot FOV circle fixed to the screen centre instead of the mouse.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven

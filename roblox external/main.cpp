@@ -31,32 +31,6 @@ namespace overlay {
     void render_ui() {
         TickKeybinds();
 
-        {
-            // subtle frosted chip in the top-left corner with the live framerate
-            static float fps_timer = 0;
-            static int frame_count = 0;
-            static float current_fps = 0;
-            frame_count++;
-            float now = (float)ImGui::GetTime();
-            if (now - fps_timer >= 1.0f) {
-                current_fps = (float)frame_count / (now - fps_timer);
-                frame_count = 0;
-                fps_timer = now;
-            }
-            char fps_buf[32];
-            sprintf_s(fps_buf, "%d fps", (int)current_fps);
-
-            ImDrawList* dl = ImGui::GetBackgroundDrawList();
-            ImVec2 ts = ImGui::CalcTextSize(fps_buf);
-            float pad = 10.0f, hgt = ts.y + 12.0f;
-            ImVec2 p0(12.0f, 12.0f);
-            ImVec2 p1(p0.x + ts.x + pad * 2.0f, p0.y + hgt);
-            dl->AddRectFilled(p0, p1, IM_COL32(14, 17, 28, 150), 8.0f);
-            dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 26), 8.0f, 0, 1.0f);
-            dl->AddText(ImVec2(p0.x + pad, p0.y + (hgt - ts.y) * 0.5f),
-                        IM_COL32(226, 229, 240, 255), fps_buf);
-        }
-
         if (esp_enabled) {
             features::RenderESP();
             if (skeleton_esp) features::RenderSkeletonESP();
