@@ -93,7 +93,7 @@ inline float fov_value = 70.0f;
 // ---- ui customisation (ui page) ----
 inline float ui_transparency = 6.0f;
 inline bool  ui_rounded_corners = true;
-inline float ui_corner_radius = 14.0f;
+inline float ui_corner_radius = 16.0f;
 inline bool  ui_rainbow = false;
 inline float ui_accent_color[3] = { 0.78f, 0.08f, 0.08f };
 

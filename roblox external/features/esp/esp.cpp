@@ -125,11 +125,17 @@ namespace features {
             return false;
         }
 
-        bool has_point = false;
-        float min_x = 0.0f;
-        float min_y = 0.0f;
-        float max_x = 0.0f;
-        float max_y = 0.0f;
+        // Build ONE world-space axis-aligned box around the character from each
+        // part's centre + its canonical body size, then project that box's 8
+        // corners. We deliberately do NOT read Primitive::Size / Primitive::Rotation
+        // here: both offsets are unreliable on this client (Size reads ~0, Rotation
+        // can be garbage), and applying them is what made the box drift above the
+        // character and wobble with distance. Body-part sizes are essentially
+        // constant in Roblox, so canonical sizes give a stable, distance-independent
+        // box that hugs the character.
+        float min_x = 1e30f, min_y = 1e30f, min_z = 1e30f;
+        float max_x = -1e30f, max_y = -1e30f, max_z = -1e30f;
+        bool any = false;
 
         for (size_t i = 0; i < entity.primitive_count; ++i) {
             uintptr_t primitive = entity.primitives[i];
@@ -137,58 +143,47 @@ namespace features {
             Vec3 pos{};
             Vec3 size{};
             if (!ReadVec3(primitive + Offsets::Primitive::Position, pos)) continue;
-            if (!ReadVec3(primitive + Offsets::Primitive::Size, size)) continue;
-
-            // A part whose size reads back as ~0 collapses its 8 corners onto the
-            // part's centre, which makes the whole box float and shrink with
-            // distance. Fall back to the part's canonical body size instead.
-            if (size.x < 0.05f && size.y < 0.05f && size.z < 0.05f)
-                CanonicalPartSize(entity.part_names[i], size);
+            CanonicalPartSize(entity.part_names[i], size);
 
             float hx = size.x * 0.5f;
             float hy = size.y * 0.5f;
             float hz = size.z * 0.5f;
 
-            // apply the part's 3x3 rotation matrix, otherwise rotated/tilted parts
-            // produce a box that is far too big and drifts as the player turns
-            float rot[9] = {};
-            bool have_rot = ReadRaw(primitive + Offsets::Primitive::Rotation, rot, sizeof(rot));
+            if (pos.x - hx < min_x) min_x = pos.x - hx;
+            if (pos.x + hx > max_x) max_x = pos.x + hx;
+            if (pos.y - hy < min_y) min_y = pos.y - hy;
+            if (pos.y + hy > max_y) max_y = pos.y + hy;
+            if (pos.z - hz < min_z) min_z = pos.z - hz;
+            if (pos.z + hz > max_z) max_z = pos.z + hz;
+            any = true;
+        }
 
-            static const float local[8][3] = {
-                {-1,-1,-1},{-1,-1, 1},{-1, 1,-1},{-1, 1, 1},
-                { 1,-1,-1},{ 1,-1, 1},{ 1, 1,-1},{ 1, 1, 1}
-            };
+        if (!any) {
+            out_box.valid = false;
+            return false;
+        }
 
-            Vec3 corners[8];
-            for (int c = 0; c < 8; ++c) {
-                float lx = local[c][0] * hx;
-                float ly = local[c][1] * hy;
-                float lz = local[c][2] * hz;
+        const Vec3 corners[8] = {
+            { min_x, min_y, min_z }, { min_x, min_y, max_z },
+            { min_x, max_y, min_z }, { min_x, max_y, max_z },
+            { max_x, min_y, min_z }, { max_x, min_y, max_z },
+            { max_x, max_y, min_z }, { max_x, max_y, max_z },
+        };
 
-                if (have_rot) {
-                    corners[c] = {
-                        pos.x + rot[0] * lx + rot[1] * ly + rot[2] * lz,
-                        pos.y + rot[3] * lx + rot[4] * ly + rot[5] * lz,
-                        pos.z + rot[6] * lx + rot[7] * ly + rot[8] * lz
-                    };
+        bool has_point = false;
+        float scr_min_x = 0.0f, scr_min_y = 0.0f, scr_max_x = 0.0f, scr_max_y = 0.0f;
+        for (int c = 0; c < 8; ++c) {
+            Vec2 pt{};
+            if (WorldToScreen(corners[c], pt, view, viewport)) {
+                if (!has_point) {
+                    scr_min_x = scr_max_x = pt.x;
+                    scr_min_y = scr_max_y = pt.y;
+                    has_point = true;
                 } else {
-                    corners[c] = { pos.x + lx, pos.y + ly, pos.z + lz };
-                }
-            }
-
-            for (int c = 0; c < 8; ++c) {
-                Vec2 pt{};
-                if (WorldToScreen(corners[c], pt, view, viewport)) {
-                    if (!has_point) {
-                        min_x = max_x = pt.x;
-                        min_y = max_y = pt.y;
-                        has_point = true;
-                    } else {
-                        if (pt.x < min_x) min_x = pt.x;
-                        if (pt.x > max_x) max_x = pt.x;
-                        if (pt.y < min_y) min_y = pt.y;
-                        if (pt.y > max_y) max_y = pt.y;
-                    }
+                    if (pt.x < scr_min_x) scr_min_x = pt.x;
+                    if (pt.x > scr_max_x) scr_max_x = pt.x;
+                    if (pt.y < scr_min_y) scr_min_y = pt.y;
+                    if (pt.y > scr_max_y) scr_max_y = pt.y;
                 }
             }
         }
@@ -198,17 +193,17 @@ namespace features {
             return false;
         }
 
-        float w = max_x - min_x;
-        float h = max_y - min_y;
+        float w = scr_max_x - scr_min_x;
+        float h = scr_max_y - scr_min_y;
         if (w <= 1.0f || h <= 1.0f) {
             out_box.valid = false;
             return false;
         }
 
-        out_box.min_x = min_x;
-        out_box.min_y = min_y;
-        out_box.max_x = max_x;
-        out_box.max_y = max_y;
+        out_box.min_x = scr_min_x;
+        out_box.min_y = scr_min_y;
+        out_box.max_x = scr_max_x;
+        out_box.max_y = scr_max_y;
         out_box.valid = true;
         return true;
     }

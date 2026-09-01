@@ -71,26 +71,32 @@ static bool keybind_button(const char* label, int& key) {
 }
 
 
-// ---------------------------------------------------------------
-// frosted-glass widgets. every panel stays translucent so the game
-// shows through, with a soft top sheen, rounded corners and a single
-// accent colour driven by the ui page.
-// ---------------------------------------------------------------
+// ------------------------------------------------------------------
+// liquid glass UI toolkit.
+//
+// No backdrop blur is available on a transparent DX11 overlay, so the
+// "liquid glass" look is faked with layered translucent gradients:
+//   - a bright top catch-light and a soft bottom reflection,
+//   - a deep vertical gradient so panels read as glass, not flat colour,
+//   - soft drop shadows + accent bloom (layered translucent halos),
+//   - a slow animated shimmer so the surface feels alive.
+// Every widget is driven by the live accent + transparency from the ui page.
+// ------------------------------------------------------------------
 namespace ui {
     static const ImU32 OFF_TRACK = IM_COL32(40, 43, 60, 255);
-    static const ImU32 TXT_MAIN  = IM_COL32(226, 229, 240, 255);
-    static const ImU32 TXT_DIM   = IM_COL32(140, 143, 156, 255);
+    static const ImU32 TXT_MAIN  = IM_COL32(228, 231, 242, 255);
+    static const ImU32 TXT_DIM   = IM_COL32(143, 146, 160, 255);
     static const ImU32 WHITE     = IM_COL32(255, 255, 255, 255);
 
-    // uniform metrics so every row lines up (tighter than before - compact look)
-    static constexpr float ROW_H     = 29.0f;
-    static constexpr float SLIDER_H  = 40.0f;
-    static constexpr float PAD_X     = 10.0f;
-    static constexpr float GAP       = 5.0f;
-    static constexpr float ROUND     = 8.0f;
+    // uniform metrics so every row lines up
+    static constexpr float ROW_H     = 30.0f;
+    static constexpr float SLIDER_H  = 44.0f;
+    static constexpr float PAD_X     = 12.0f;
+    static constexpr float GAP       = 6.0f;
+    static constexpr float ROUND     = 10.0f;
 
-    // how much the glass lets through (driven by the transparency slider)
     inline float GlassA() { return 1.0f - (ui_transparency / 100.0f); }
+    inline float AnimT() { return (float)ImGui::GetTime(); }
 
     inline ImU32 Mix(ImU32 a, ImU32 b, float t) {
         if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
@@ -103,7 +109,7 @@ namespace ui {
         return IM_COL32(r, g, bl, al);
     }
 
-    // live accent, driven by the ui page (so rainbow reaches every widget)
+    // live accent (driven by the ui page, so rainbow reaches every widget)
     inline ImU32 Accent(float alpha = 1.0f) {
         return IM_COL32((int)(ui_accent_color[0] * 255.0f),
                         (int)(ui_accent_color[1] * 255.0f),
@@ -111,59 +117,117 @@ namespace ui {
                         (int)(alpha * 255.0f));
     }
     inline ImU32 AccentLight(float alpha = 1.0f) {
-        return Mix(Accent(alpha), IM_COL32(255, 255, 255, (int)(alpha * 255.0f)), 0.34f);
+        return Mix(Accent(alpha), IM_COL32(255, 255, 255, (int)(alpha * 255.0f)), 0.36f);
     }
     inline ImU32 AccentDeep(float alpha = 1.0f) {
-        return IM_COL32((int)(ui_accent_color[0] * 0.60f * 255.0f),
-                        (int)(ui_accent_color[1] * 0.60f * 255.0f),
-                        (int)(ui_accent_color[2] * 0.60f * 255.0f),
+        return IM_COL32((int)(ui_accent_color[0] * 0.55f * 255.0f),
+                        (int)(ui_accent_color[1] * 0.55f * 255.0f),
+                        (int)(ui_accent_color[2] * 0.55f * 255.0f),
                         (int)(alpha * 255.0f));
     }
 
-    // translucent element body
-    inline ImU32 PanelBase() { return IM_COL32(25, 28, 42, (int)(120.0f * GlassA())); }
+    inline ImU32 PanelBase()  { return IM_COL32(26, 29, 44, (int)(118.0f * GlassA())); }
+    inline ImU32 GlassTop()   { return IM_COL32(30, 33, 50, (int)(150.0f * GlassA())); }
+    inline ImU32 GlassDeep()  { return IM_COL32(15, 17, 27, (int)(165.0f * GlassA())); }
 
-    // frosted panel: soft shadow + vertical glass gradient + top catch-light + hairline border
-    inline void GlassPanel(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r,
-                           ImU32 base, ImU32 border, bool shadow = false, float sheen = 10.0f) {
-        if (shadow)
-            d->AddShadowRect(a, b, IM_COL32(0, 0, 0, 120), 18.0f, ImVec2(0.0f, 4.0f), ImDrawFlags_None, r);
-        ImU32 top    = Mix(base, IM_COL32(255, 255, 255, (int)sheen), 0.55f);
-        ImU32 bottom = Mix(base, IM_COL32(8, 9, 16, 90), 0.45f);
-        d->AddRectFilledMultiColor(a, b, top, top, bottom, bottom);
-        d->AddLine(ImVec2(a.x + r, a.y + 0.5f), ImVec2(b.x - r, a.y + 0.5f),
-                   IM_COL32(255, 255, 255, (int)(sheen * 3.5f)), 1.0f);
-        d->AddRect(a, b, border, r, 0, 1.2f);
+    // fake bloom: several translucent accent halos behind an element
+    inline void AccentHalo(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r, float strength = 1.0f) {
+        d->AddShadowRect(a, b, Accent((int)(70.0f * strength) / 255.0f), 26.0f, ImVec2(0, 0), ImDrawFlags_None, r);
+        d->AddShadowRect(a, b, Accent((int)(38.0f * strength) / 255.0f), 12.0f, ImVec2(0, 0), ImDrawFlags_None, r);
     }
 
-    // section header: accent bar + uppercase caption + faint rule
+    // rounded vertical gradient (AddRectFilledMultiColor has no rounding, so we
+    // stack three rounded bands instead - the seams are straight horizontal lines)
+    inline void RoundedGradient(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r,
+                                ImU32 top, ImU32 mid, ImU32 bottom) {
+        d->AddRectFilled(a, b, bottom, r);
+        float h = b.y - a.y;
+        if (h > 6.0f) {
+            d->AddRectFilled(a, ImVec2(b.x, a.y + h * 0.62f), mid, r, ImDrawFlags_RoundCornersTop);
+            d->AddRectFilled(a, ImVec2(b.x, a.y + h * 0.30f), top, r, ImDrawFlags_RoundCornersTop);
+        }
+    }
+
+    // the core liquid glass surface: shadow + vertical gradient + catch-light +
+    // bottom reflection + hairline border (+ optional accent bloom + shimmer sweep)
+    inline void LiquidPanel(ImDrawList* d, const ImVec2& a, const ImVec2& b, float r,
+                            ImU32 base, ImU32 border, bool shadow, float bloom = 0.0f, bool shimmer = false) {
+        if (shadow)
+            d->AddShadowRect(a, b, IM_COL32(0, 0, 0, 120), 18.0f, ImVec2(0.0f, 5.0f), ImDrawFlags_None, r);
+
+        if (bloom > 0.01f)
+            AccentHalo(d, a, b, r, bloom);
+
+        ImU32 top    = Mix(base, IM_COL32(255, 255, 255, 26), 0.55f);
+        ImU32 mid    = base;
+        ImU32 bottom = Mix(base, IM_COL32(6, 7, 13, 120), 0.55f);
+        RoundedGradient(d, a, b, r, top, mid, bottom);
+
+        float h = b.y - a.y;
+        if (h > 6.0f) {
+            // bright catch-light across the top edge
+            d->AddLine(ImVec2(a.x + r, a.y + 0.5f), ImVec2(b.x - r, a.y + 0.5f),
+                       IM_COL32(255, 255, 255, 46), 1.0f);
+            // soft top glow band
+            d->AddRectFilled(a, ImVec2(b.x, a.y + h * 0.30f),
+                             IM_COL32(255, 255, 255, 8), r, ImDrawFlags_RoundCornersTop);
+            // faint reflection along the bottom
+            d->AddLine(ImVec2(a.x + r, b.y - 1.0f), ImVec2(b.x - r, b.y - 1.0f),
+                       IM_COL32(255, 255, 255, 18), 1.0f);
+        }
+
+        if (shimmer) {
+            float t = AnimT();
+            float sw = (b.x - a.x);
+            float sx = a.x + fmodf(t * 34.0f, sw + 240.0f) - 120.0f;
+            d->AddLine(ImVec2(sx, a.y), ImVec2(sx + 90.0f, b.y),
+                       IM_COL32(255, 255, 255, 9), 1.0f);
+        }
+
+        d->AddRect(a, b, border, r, 0, 1.0f);
+        d->AddRect(ImVec2(a.x + 0.5f, a.y + 0.5f), ImVec2(b.x - 0.5f, b.y - 0.5f),
+                   IM_COL32(255, 255, 255, 9), r, 0, 1.0f);
+    }
+
+    // section header: accent tick + letter-spaced caption + fading rule
     inline void Section(const char* text) {
-        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::Dummy(ImVec2(0, 7));
         ImVec2 p = ImGui::GetCursorScreenPos();
         float h = ImGui::GetTextLineHeight();
         float full = ImGui::GetContentRegionAvail().x;
         ImDrawList* d = ImGui::GetWindowDrawList();
 
-        d->AddRectFilled(ImVec2(p.x, p.y + 2), ImVec2(p.x + 3, p.y + h - 2), Accent());
+        d->AddRectFilled(ImVec2(p.x, p.y + 2), ImVec2(p.x + 3, p.y + h - 2), Accent(), 1.5f);
+        d->AddCircleFilled(ImVec2(p.x + 1.5f, p.y + h * 0.5f), 6.0f, Accent(0.28f));
 
+        // letter-spaced uppercase caption
         char up[128];
-        size_t i = 0;
-        for (; text[i] && i < sizeof(up) - 1; ++i)
-            up[i] = (char)toupper((unsigned char)text[i]);
-        up[i] = '\0';
+        size_t n = 0;
+        for (const char* c = text; *c && n < sizeof(up) - 1; ++c)
+            up[n++] = (char)toupper((unsigned char)*c);
+        up[n] = '\0';
 
-        ImGui::SetCursorScreenPos(ImVec2(p.x + 12, p.y));
-        ImGui::TextColored(ImVec4(0.93f, 0.94f, 0.98f, 1.0f), "%s", up);
+        char spaced[256];
+        size_t m = 0;
+        for (size_t i = 0; i < n && m < sizeof(spaced) - 2; ++i) {
+            spaced[m++] = up[i];
+            if (i + 1 < n) { spaced[m++] = ' '; }
+        }
+        spaced[m] = '\0';
 
-        float tx = p.x + 12.0f + ImGui::CalcTextSize(up).x + 10.0f;
+        ImGui::SetCursorScreenPos(ImVec2(p.x + 13, p.y));
+        ImGui::TextColored(ImVec4(0.90f, 0.91f, 0.96f, 1.0f), "%s", spaced);
+
+        float tx = p.x + 13.0f + ImGui::CalcTextSize(spaced).x + 12.0f;
         if (full - tx > 10.0f)
-            d->AddLine(ImVec2(tx, p.y + h * 0.5f), ImVec2(p.x + full, p.y + h * 0.5f), IM_COL32(255, 255, 255, 12), 1.0f);
-        ImGui::Dummy(ImVec2(0, 4));
+            d->AddRectFilledMultiColor(ImVec2(tx, p.y + h * 0.5f), ImVec2(p.x + full, p.y + h * 0.5f + 1.0f),
+                                       Accent(0.30f), Accent(0.30f), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+        ImGui::Dummy(ImVec2(0, 5));
     }
 
-    // page title + subtitle + accent gradient rule
+    // page title + subtitle + animated accent rule
     inline void PageHeader(const char* title, const char* subtitle) {
-        ImGui::TextColored(ImVec4(0.95f, 0.96f, 0.99f, 1.0f), "%s", title);
+        ImGui::TextColored(ImVec4(0.97f, 0.97f, 1.0f, 1.0f), "%s", title);
         if (subtitle && subtitle[0])
             ImGui::TextDisabled("%s", subtitle);
 
@@ -171,11 +235,15 @@ namespace ui {
         float full = ImGui::GetContentRegionAvail().x;
         ImDrawList* d = ImGui::GetWindowDrawList();
         d->AddRectFilledMultiColor(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y + 2.0f),
-                                   Accent(0.9f), AccentLight(0.9f), Accent(0.0f), Accent(0.0f));
-        ImGui::Dummy(ImVec2(0, 8));
+                                   Accent(0.95f), AccentLight(0.95f), Accent(0.0f), Accent(0.0f));
+        // travelling highlight on the rule
+        float t = AnimT();
+        float sx = p.x + fmodf(t * 60.0f, full + 120.0f) - 60.0f;
+        d->AddRectFilled(ImVec2(sx, p.y), ImVec2(sx + 30.0f, p.y + 2.0f), IM_COL32(255, 255, 255, 70));
+        ImGui::Dummy(ImVec2(0, 9));
     }
 
-    // pill switch with sliding knob
+    // pill switch with a glowing, sliding knob
     inline bool Toggle(const char* label, bool* v) {
         float full = ImGui::GetContentRegionAvail().x;
         float h = ROW_H;
@@ -187,29 +255,39 @@ namespace ui {
         bool hov = ImGui::IsItemHovered();
 
         ImDrawList* d = ImGui::GetWindowDrawList();
-        GlassPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
-                   hov ? Accent(0.85f) : Accent(0.30f));
+        LiquidPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
+                    hov ? Accent(0.85f) : Accent(0.30f), false, *v ? 0.55f : 0.0f, false);
 
-        d->AddText(ImVec2(p.x + PAD_X, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f), TXT_MAIN, label);
+        d->AddText(ImVec2(p.x + PAD_X, p.y + (h - ImGui::GetTextLineHeight()) * 0.5f),
+                   *v ? TXT_MAIN : TXT_DIM, label);
 
-        float tw = 40.0f, th = 20.0f;
+        float tw = 42.0f, th = 22.0f;
         float tx = p.x + full - tw - 12.0f;
         float ty = p.y + (h - th) * 0.5f;
-        d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th), *v ? Accent() : OFF_TRACK, th * 0.5f);
-        if (*v)
-            d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th * 0.5f), AccentLight(0.7f), th * 0.5f, ImDrawFlags_RoundCornersTop);
 
-        float kr = 7.0f;
+        // track
+        d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th),
+                         *v ? Accent() : OFF_TRACK, th * 0.5f);
+        if (*v) {
+            d->AddRectFilled(ImVec2(tx, ty), ImVec2(tx + tw, ty + th * 0.5f),
+                             AccentLight(0.65f), th * 0.5f, ImDrawFlags_RoundCornersTop);
+            AccentHalo(d, ImVec2(tx, ty), ImVec2(tx + tw, ty + th), th * 0.5f, 0.8f);
+        }
+
+        // knob
+        float kr = 8.0f;
         float kx = *v ? (tx + tw - kr - 3.0f) : (tx + kr + 3.0f);
-        d->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), kr, WHITE);
-        if (hov)
-            d->AddCircle(ImVec2(kx, ty + th * 0.5f), kr, Accent(0.55f), 24, 1.0f);
+        float ky = ty + th * 0.5f;
+        if (hov) d->AddCircleFilled(ImVec2(kx, ky), kr + 3.0f, Accent(0.22f));
+        d->AddCircleFilled(ImVec2(kx, ky), kr, WHITE);
+        d->AddCircleFilled(ImVec2(kx, ky - 2.0f), kr * 0.55f, IM_COL32(255, 255, 255, 60));
+        d->AddCircle(ImVec2(kx, ky), kr, *v ? AccentLight(0.9f) : IM_COL32(255, 255, 255, 30), 24, 1.0f);
 
         ImGui::Dummy(ImVec2(0, GAP - 2));
         return pressed;
     }
 
-    // label + right-aligned value + fill track
+    // label + right-aligned value + glowing fill track
     inline bool Slider(const char* label, float* v, float mn, float mx, const char* fmt = "%.0f") {
         float full = ImGui::GetContentRegionAvail().x;
         float h = SLIDER_H;
@@ -222,7 +300,7 @@ namespace ui {
 
         float trx = p.x + PAD_X;
         float trw = full - PAD_X * 2.0f;
-        float try_ = p.y + h - 13.0f;
+        float try_ = p.y + h - 15.0f;
 
         if (active) {
             float mxpos = ImGui::GetIO().MousePos.x;
@@ -232,8 +310,9 @@ namespace ui {
         }
 
         ImDrawList* d = ImGui::GetWindowDrawList();
-        GlassPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
-                   (hov || active) ? Accent(0.85f) : Accent(0.30f));
+        LiquidPanel(d, p, ImVec2(p.x + full, p.y + h), ROUND, PanelBase(),
+                    (hov || active) ? Accent(0.9f) : Accent(0.30f), false,
+                    (hov || active) ? 0.45f : 0.0f, false);
 
         d->AddText(ImVec2(p.x + PAD_X, p.y + 8), TXT_MAIN, label);
 
@@ -242,27 +321,39 @@ namespace ui {
         ImVec2 ts = ImGui::CalcTextSize(buf);
         d->AddText(ImVec2(p.x + full - ts.x - PAD_X, p.y + 8), Accent(), buf);
 
-        d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw, try_ + 4), OFF_TRACK, 2.0f);
+        // track groove
+        d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw, try_ + 5), OFF_TRACK, 2.5f);
         float ratio = (mx - mn) != 0.0f ? (*v - mn) / (mx - mn) : 0.0f;
         if (ratio < 0) ratio = 0; if (ratio > 1) ratio = 1;
-        d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw * ratio, try_ + 4), Accent(), 2.0f);
-        if (ratio > 0.03f)
-            d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + trw * ratio, try_ + 2), AccentLight(0.6f), 2.0f, ImDrawFlags_RoundCornersTop);
+        float fillw = trw * ratio;
+        if (fillw > 0.0f) {
+            d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + fillw, try_ + 5), Accent(), 2.5f);
+            d->AddRectFilled(ImVec2(trx, try_), ImVec2(trx + fillw, try_ + 2.5f),
+                             AccentLight(0.55f), 2.5f, ImDrawFlags_RoundCornersTop);
+            // travelling spark on the fill
+            float t = AnimT();
+            float sx = trx + fmodf(t * 70.0f, fillw + 60.0f) - 30.0f;
+            d->AddRectFilled(ImVec2(sx, try_), ImVec2(sx + 22.0f, try_ + 5), IM_COL32(255, 255, 255, 46), 2.5f);
+        }
 
-        float kx = trx + trw * ratio;
-        float kr = (active || hov) ? 6.0f : 5.0f;
-        d->AddCircleFilled(ImVec2(kx, try_ + 2), kr, WHITE);
-        d->AddCircle(ImVec2(kx, try_ + 2), kr, Accent(0.7f), 20, 1.2f);
+        // knob
+        float kx = trx + fillw;
+        float ky = try_ + 2.5f;
+        float kr = (active || hov) ? 7.0f : 5.5f;
+        if (active || hov) d->AddCircleFilled(ImVec2(kx, ky), kr + 4.0f, Accent(0.25f));
+        d->AddCircleFilled(ImVec2(kx, ky), kr, WHITE);
+        d->AddCircleFilled(ImVec2(kx, ky - 1.5f), kr * 0.5f, IM_COL32(255, 255, 255, 70));
+        d->AddCircle(ImVec2(kx, ky), kr, Accent(0.8f), 20, 1.2f);
 
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, GAP - 2));
         return active;
     }
 
-    // top nav pill
+    // top nav pill with a bloom when selected
     inline bool NavButton(const char* label, bool selected, float width = 0.0f) {
         ImVec2 sz = ImGui::CalcTextSize(label);
-        ImVec2 btn(width > 0.0f ? width : sz.x + 28.0f, 32.0f);
+        ImVec2 btn(width > 0.0f ? width : sz.x + 28.0f, 34.0f);
         ImVec2 p = ImGui::GetCursorScreenPos();
 
         ImGui::InvisibleButton(label, btn);
@@ -273,26 +364,28 @@ namespace ui {
         float ga = GlassA();
 
         ImU32 fill, border, text;
+        float bloom = 0.0f;
         if (selected) {
             fill = Accent();
             border = AccentLight(0.9f);
             text = WHITE;
+            bloom = 0.9f;
         } else if (hov) {
-            fill = IM_COL32(46, 51, 74, (int)(170.0f * ga));
-            border = Accent(0.6f);
+            fill = IM_COL32(48, 53, 78, (int)(175.0f * ga));
+            border = Accent(0.65f);
             text = TXT_MAIN;
         } else {
-            fill = IM_COL32(28, 31, 46, (int)(150.0f * ga));
-            border = IM_COL32(255, 255, 255, 16);
+            fill = IM_COL32(28, 31, 47, (int)(150.0f * ga));
+            border = IM_COL32(255, 255, 255, 15);
             text = TXT_DIM;
         }
 
-        if (selected)
-            d->AddShadowRect(p, ImVec2(p.x + btn.x, p.y + btn.y), Accent(0.45f), 14.0f, ImVec2(0.0f, 2.0f), ImDrawFlags_None, ROUND);
+        if (bloom > 0.0f)
+            AccentHalo(d, p, ImVec2(p.x + btn.x, p.y + btn.y), ROUND, bloom);
 
         d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y), fill, ROUND);
         d->AddRectFilled(p, ImVec2(p.x + btn.x, p.y + btn.y * 0.5f),
-                         selected ? AccentLight(0.55f) : IM_COL32(255, 255, 255, 4),
+                         selected ? AccentLight(0.5f) : IM_COL32(255, 255, 255, 4),
                          ROUND, ImDrawFlags_RoundCornersTop);
         d->AddRect(p, ImVec2(p.x + btn.x, p.y + btn.y), border, ROUND, 0, 1.2f);
         d->AddText(ImVec2(p.x + (btn.x - sz.x) * 0.5f, p.y + (btn.y - sz.y) * 0.5f), text, label);
@@ -310,6 +403,8 @@ void RenderMenu() {
         st.ChildRounding  = r;
         st.FrameRounding  = r;
         st.PopupRounding  = r;
+        st.ScrollbarRounding = 8.0f;
+        st.GrabRounding   = 8.0f;
 
         // remember the accent we're overwriting, and restore it the moment the
         // rainbow switch is turned back off (otherwise it stays on the last hue)
@@ -364,43 +459,46 @@ void RenderMenu() {
 
         // every background alpha scales with the transparency slider
         float a = 1.0f - (ui_transparency / 100.0f);
-        st.Colors[ImGuiCol_WindowBg]        = ImVec4(0.059f, 0.065f, 0.098f, 0.88f * a);
-        st.Colors[ImGuiCol_ChildBg]         = ImVec4(0.10f, 0.11f, 0.16f, 0.20f * a);
-        st.Colors[ImGuiCol_PopupBg]         = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_WindowBg]        = ImVec4(0.055f, 0.060f, 0.090f, 0.90f * a);
+        st.Colors[ImGuiCol_ChildBg]         = ImVec4(0.10f, 0.11f, 0.16f, 0.16f * a);
+        st.Colors[ImGuiCol_PopupBg]         = ImVec4(0.040f, 0.043f, 0.066f, 0.96f * a);
         st.Colors[ImGuiCol_FrameBg]         = ImVec4(0.16f, 0.17f, 0.24f, 0.45f * a);
         st.Colors[ImGuiCol_FrameBgHovered]  = ImVec4(accent.x, accent.y, accent.z, 0.18f * a);
         st.Colors[ImGuiCol_FrameBgActive]   = ImVec4(accent.x, accent.y, accent.z, 0.32f * a);
-        st.Colors[ImGuiCol_TitleBg]         = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
-        st.Colors[ImGuiCol_TitleBgActive]   = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
-        st.Colors[ImGuiCol_MenuBarBg]       = ImVec4(0.043f, 0.047f, 0.074f, 0.96f * a);
+        st.Colors[ImGuiCol_TitleBg]         = ImVec4(0.040f, 0.043f, 0.066f, 0.96f * a);
+        st.Colors[ImGuiCol_TitleBgActive]   = ImVec4(0.040f, 0.043f, 0.066f, 0.96f * a);
+        st.Colors[ImGuiCol_MenuBarBg]       = ImVec4(0.040f, 0.043f, 0.066f, 0.96f * a);
         st.Colors[ImGuiCol_Button]          = ImVec4(0.16f, 0.17f, 0.24f, 0.55f * a);
         st.Colors[ImGuiCol_ScrollbarBg]     = ImVec4(0.02f, 0.02f, 0.04f, 0.40f * a);
     }
 
-    // start at a comfortable size, stay freely resizable, and never let it be
-    // dragged smaller than the tab bar needs
     ImGui::SetNextWindowSize(ImVec2(720.0f, 540.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints(ImVec2(480.0f, 360.0f), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::Begin("roblox external", nullptr,
                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
+    // ---- window glass card ----
     {
         ImDrawList* d = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
         float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
 
-        // soft drop shadow around the whole glass card
+        // soft drop shadow
         d->PushClipRectFullScreen();
-        d->AddShadowRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), IM_COL32(0, 0, 0, 130), 26.0f,
-                         ImVec2(0.0f, 10.0f), ImDrawFlags_None, wr);
+        d->AddShadowRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), IM_COL32(0, 0, 0, 140), 30.0f,
+                         ImVec2(0.0f, 12.0f), ImDrawFlags_None, wr);
         d->PopClipRect();
 
-        // top sheen + hairline accent border
-        d->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y * 0.28f), IM_COL32(255, 255, 255, 5),
-                         wr, ImDrawFlags_RoundCornersTop);
+        // glass body gradient + top sheen + accent hairline
+        ui::RoundedGradient(d, wp, ImVec2(wp.x + ws.x, wp.y + ws.y), wr,
+                            ui::GlassTop(), ui::GlassTop(), ui::GlassDeep());
+        d->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y * 0.18f),
+                         IM_COL32(255, 255, 255, 6), wr, ImDrawFlags_RoundCornersTop);
         d->AddRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), ui::Accent(0.5f), wr, 0, 1.2f);
+        d->AddRect(ImVec2(wp.x + 0.5f, wp.y + 0.5f), ImVec2(wp.x + ws.x - 0.5f, wp.y + ws.y - 0.5f),
+                   IM_COL32(255, 255, 255, 10), wr, 0, 1.0f);
     }
 
     // ---- custom title bar ----
@@ -412,13 +510,29 @@ void RenderMenu() {
         ImVec2 ws = ImGui::GetWindowSize();
         float ga = 1.0f - (ui_transparency / 100.0f);
         float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
-        const float bar_h = 44.0f;
+        const float bar_h = 52.0f;
+        float t = ui::AnimT();
 
         ImVec2 a(wp.x, wp.y), b(wp.x + ws.x, wp.y + bar_h);
-        d->AddRectFilled(a, b, IM_COL32(21, 24, 38, (int)(215.0f * ga)), wr, ImDrawFlags_RoundCornersTop);
-        d->AddRectFilled(a, ImVec2(b.x, wp.y + bar_h * 0.55f), IM_COL32(255, 255, 255, 6), wr, ImDrawFlags_RoundCornersTop);
-        d->AddLine(ImVec2(a.x, b.y - 1), ImVec2(b.x, b.y - 1), ui::Accent(0.45f), 1.0f);
-        d->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, b.y), IM_COL32(0, 0, 0, 90), 1.0f);
+
+        // deep glass header (rounded top corners)
+        ui::RoundedGradient(d, a, b, wr,
+                            ui::Mix(IM_COL32(24, 27, 43, 255), IM_COL32(255, 255, 255, 255), 0.10f),
+                            IM_COL32(20, 23, 37, (int)(225.0f * ga)),
+                            IM_COL32(13, 15, 24, (int)(225.0f * ga)));
+        d->AddRectFilled(a, ImVec2(b.x, wp.y + 1.0f), IM_COL32(255, 255, 255, 8), wr, ImDrawFlags_RoundCornersTop);
+
+        // animated aurora wash (soft accent glow that breathes)
+        {
+            float breathe = 0.5f + 0.5f * sinf(t * 0.9f);
+            float cx = wp.x + ws.x * (0.18f + 0.64f * breathe);
+            d->AddCircleFilled(ImVec2(cx, wp.y - 30.0f), 150.0f, ui::Accent((int)(20.0f) / 255.0f), 72);
+            d->AddCircleFilled(ImVec2(cx, wp.y - 30.0f), 90.0f, ui::Accent((int)(16.0f) / 255.0f), 72);
+        }
+
+        // catch-light + hairline
+        d->AddRectFilled(a, ImVec2(b.x, wp.y + bar_h * 0.45f), IM_COL32(255, 255, 255, 6), wr, ImDrawFlags_RoundCornersTop);
+        d->AddLine(ImVec2(a.x, b.y - 1), ImVec2(b.x, b.y - 1), ui::Accent(0.5f), 1.0f);
 
         // drag anywhere on the bar (left of the window controls) to move the window
         ImGui::SetCursorScreenPos(ImVec2(wp.x, wp.y));
@@ -430,27 +544,32 @@ void RenderMenu() {
 
         // brand
         {
-            ImVec2 bp(wp.x + 14.0f, wp.y);
-            d->AddRectFilled(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 32), ui::Accent(), 5.0f);
-            d->AddRectFilled(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 22), ui::AccentLight(0.6f), 5.0f, ImDrawFlags_RoundCornersTop);
-            d->AddRect(ImVec2(bp.x, bp.y + 12), ImVec2(bp.x + 20, bp.y + 32), ui::AccentLight(0.9f), 5.0f, 0, 1.0f);
-            d->AddCircleFilled(ImVec2(bp.x + 10, bp.y + 22), 3.0f, ui::WHITE);
+            ImVec2 bp(wp.x + 15.0f, wp.y);
+            float by = bp.y + (bar_h - 22.0f) * 0.5f;
+            d->AddRectFilled(ImVec2(bp.x, by), ImVec2(bp.x + 22, by + 22), ui::Accent(), 6.0f);
+            d->AddRectFilled(ImVec2(bp.x, by), ImVec2(bp.x + 22, by + 11), ui::AccentLight(0.65f), 6.0f, ImDrawFlags_RoundCornersTop);
+            d->AddRect(ImVec2(bp.x, by), ImVec2(bp.x + 22, by + 22), ui::AccentLight(0.9f), 6.0f, 0, 1.0f);
+            d->AddCircleFilled(ImVec2(bp.x + 11, by + 11), 3.2f, ui::WHITE);
 
-            d->AddText(ImVec2(bp.x + 28, bp.y + 13), IM_COL32(238, 240, 247, 255), "ROBLOX EXTERNAL");
-            d->AddText(ImVec2(bp.x + 28, bp.y + 27), ui::TXT_DIM, "usermode overlay  \xc2\xb7  v0.736");
+            d->AddText(ImVec2(bp.x + 31, by + 1), IM_COL32(238, 240, 247, 255), "ROBLOX EXTERNAL");
+            d->AddText(ImVec2(bp.x + 31, by + 17), ui::TXT_DIM, "usermode overlay  \xc2\xb7  v0.736");
         }
 
         // status chip
         {
             bool attached = g_base_address != 0;
-            ImU32 dot = attached ? IM_COL32(80, 220, 120, 255) : IM_COL32(240, 180, 60, 255);
+            float pulse = 0.5f + 0.5f * sinf(t * 3.0f);
+            ImU32 dot = attached ? IM_COL32((int)(60 + 120 * pulse), 225, (int)(90 + 60 * pulse), 255)
+                                 : IM_COL32(240, 180, 60, 255);
             const char* st = attached ? "attached" : "waiting for roblox";
             ImVec2 ts = ImGui::CalcTextSize(st);
-            float cx = wp.x + ws.x - 150.0f - ts.x - 34.0f;
-            float cy = wp.y + (bar_h - 22.0f) * 0.5f;
-            d->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + ts.x + 30.0f, cy + 22.0f), IM_COL32(12, 14, 22, 120), 11.0f);
-            d->AddCircleFilled(ImVec2(cx + 12.0f, cy + 11.0f), 4.0f, dot);
-            d->AddText(ImVec2(cx + 22.0f, cy + 3.0f), ui::TXT_DIM, st);
+            float cx = wp.x + ws.x - 150.0f - ts.x - 36.0f;
+            float cy = wp.y + (bar_h - 24.0f) * 0.5f;
+            d->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + ts.x + 32.0f, cy + 24.0f), IM_COL32(11, 13, 21, 150), 12.0f);
+            d->AddRect(ImVec2(cx, cy), ImVec2(cx + ts.x + 32.0f, cy + 24.0f), IM_COL32(255, 255, 255, 18), 12.0f, 0, 1.0f);
+            d->AddCircleFilled(ImVec2(cx + 14.0f, cy + 12.0f), 6.5f, ui::Mix(dot, IM_COL32(0, 0, 0, 0), 0.0f));
+            d->AddCircleFilled(ImVec2(cx + 14.0f, cy + 12.0f), 4.0f, dot);
+            d->AddText(ImVec2(cx + 26.0f, cy + 4.0f), ui::TXT_DIM, st);
         }
 
         // window controls
@@ -462,16 +581,17 @@ void RenderMenu() {
             ImGui::SetCursorScreenPos(ImVec2(x0, y0));
             if (ImGui::InvisibleButton("##min", ImVec2(btnw, btnh))) s_minimized = !s_minimized;
             bool mhov = ImGui::IsItemHovered();
-            d->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), mhov ? IM_COL32(60, 64, 88, 210) : IM_COL32(30, 33, 49, 180), 8.0f);
-            d->AddRect(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 18), 8.0f, 0, 1.0f);
+            d->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), mhov ? IM_COL32(64, 68, 92, 220) : IM_COL32(30, 33, 49, 190), 9.0f);
+            d->AddRect(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 20), 9.0f, 0, 1.0f);
             d->AddLine(ImVec2(x0 + 9, y0 + 15), ImVec2(x0 + 21, y0 + 15), IM_COL32(220, 223, 233, 255), 1.6f);
 
             float x1 = x0 + btnw + gap;
             ImGui::SetCursorScreenPos(ImVec2(x1, y0));
             if (ImGui::InvisibleButton("##close", ImVec2(btnw, btnh))) g_request_exit = true;
             bool chov = ImGui::IsItemHovered();
-            d->AddRectFilled(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), chov ? IM_COL32(224, 74, 84, 235) : IM_COL32(30, 33, 49, 180), 8.0f);
-            d->AddRect(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 18), 8.0f, 0, 1.0f);
+            if (chov) d->AddCircleFilled(ImVec2(x1 + 15, y0 + 15), 18.0f, IM_COL32(224, 74, 84, 60));
+            d->AddRectFilled(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), chov ? IM_COL32(224, 74, 84, 240) : IM_COL32(30, 33, 49, 190), 9.0f);
+            d->AddRect(ImVec2(x1, y0), ImVec2(x1 + btnw, y0 + btnh), IM_COL32(255, 255, 255, 20), 9.0f, 0, 1.0f);
             d->AddLine(ImVec2(x1 + 10, y0 + 10), ImVec2(x1 + 20, y0 + 20), IM_COL32(240, 240, 245, 255), 1.6f);
             d->AddLine(ImVec2(x1 + 20, y0 + 10), ImVec2(x1 + 10, y0 + 20), IM_COL32(240, 240, 245, 255), 1.6f);
         }
@@ -497,7 +617,7 @@ void RenderMenu() {
         }
         int rows = (n + per_row - 1) / per_row;
 
-        ImGui::BeginChild("nav", ImVec2(0, rows * 32.0f + (rows - 1) * gap + 6.0f), false,
+        ImGui::BeginChild("nav", ImVec2(0, rows * 34.0f + (rows - 1) * gap + 6.0f), false,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         for (int i = 0; i < n; ++i) {
             if (i % per_row) ImGui::SameLine(0.0f, gap);
@@ -719,8 +839,8 @@ void RenderMenu() {
 
             ImGui::Separator();
             ui::Section("write test");
-            ImGui::TextWrapped("flight / infinite jump / teleport all write to the root part's "
-                               "Primitive. this proves whether those writes actually land.");
+            ImGui::TextWrapped("flight / click teleport write to the root part's Primitive. "
+                               "this proves whether those writes actually land.");
 
             if (is_valid_address(lp.humanoid_address)) {
                 uintptr_t probe = read<uintptr_t>(lp.humanoid_address + Offsets::Humanoid::HumanoidRootPart);
@@ -746,7 +866,7 @@ void RenderMenu() {
                 float psz[3] = {};
                 read_raw(prim + Offsets::Primitive::Size, psz, sizeof(psz));
                 ImGui::Text("part size read  : %.2f, %.2f, %.2f %s", psz[0], psz[1], psz[2],
-                            (psz[0] > 0.05f || psz[1] > 0.05f) ? "" : "<- zero, esp boxes will sit high");
+                            (psz[0] > 0.05f || psz[1] > 0.05f) ? "" : "<- zero, esp uses canonical sizes");
 
                 static char test_result[192] = "not run yet";
 
@@ -775,6 +895,19 @@ void RenderMenu() {
                              wrote ? "ok" : "FAILED", back[1],
                              (back[1] > 50.0f) ? "LANDED" : "did NOT stick");
                     LogLine("%s", test_result);
+                }
+
+                if (ImGui::Button("probe primitive floats (+0xA0..+0x1C0)", ImVec2(-1, 0))) {
+                    LogLine("--- primitive float probe (hrp 0x%llX) ---", (unsigned long long)prim);
+                    char line[128];
+                    for (int off = 0xA0; off <= 0x1C0; off += 0x10) {
+                        float vals[4] = {};
+                        read_raw(prim + off, vals, sizeof(vals));
+                        snprintf(line, sizeof(line), "  +0x%03X: %9.2f %9.2f %9.2f %9.2f",
+                                 off, vals[0], vals[1], vals[2], vals[3]);
+                        LogLine("%s", line);
+                    }
+                    LogLine("--- probe end - send this to find Position/Size ---");
                 }
 
                 ImGui::TextWrapped("%s", test_result);
@@ -818,7 +951,7 @@ void RenderMenu() {
             if (ImGui::Button("reset to default theme", ImVec2(-1, 0))) {
                 ui_transparency = 6.0f;
                 ui_rounded_corners = true;
-                ui_corner_radius = 14.0f;
+                ui_corner_radius = 16.0f;
                 ui_rainbow = false;
                 ui_accent_color[0] = 0.78f; ui_accent_color[1] = 0.08f; ui_accent_color[2] = 0.08f;
             }
@@ -897,7 +1030,7 @@ void RenderMenu() {
         ImDrawList* d = ImGui::GetWindowDrawList();
         ImVec2 p = ImGui::GetCursorScreenPos();
         float full = ImGui::GetContentRegionAvail().x;
-        d->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y), IM_COL32(255, 255, 255, 12), 1.0f);
+        d->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + full, p.y), IM_COL32(255, 255, 255, 14), 1.0f);
 
         char left[96];
         if (g_base_address) {

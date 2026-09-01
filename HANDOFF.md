@@ -2,7 +2,7 @@
 
 **Repo:** `Glockerz/roblox-external`
 **Branch:** `arena/01a05e8a-roblox-external` (`main` untouched by request)
-**Last commit:** `9c56489`
+**Last commit:** `(see §10 changelog — HEAD of this branch)`
 **Target client:** `version-f5a60436d48947d3` (`0.736.0.7361348`)
 
 A Roblox usermode **external** cheat. It never injects — it reads/writes the Roblox
@@ -142,21 +142,30 @@ for this client build. The root part is currently resolved by **name** instead
 
 **⏭️ NEXT STEP — run this before writing any more code:**
 Debug tab → **"test POSITION write (+10 studs up)"** and **"test VELOCITY write"**.
-Each prints one line (also in the log tab). Interpretation:
 
-- `hrp primitive: 0x0` → pointer resolution is broken; fix that first.
-- `wpm=ok ... delta 0.00 ... did NOT stick` → **`Primitive::Position (0xec)` is the wrong
-  offset** for this build. Re-dump it. This is the most likely outcome.
-- `delta 10.00 ... LANDED` and you visibly teleport → writes are fine; the bug is in the
-  feature logic and is then straightforward to fix.
+**Result so far (from the user):** the position write does **not** stick, and
+`hrp via 0x478` reads `0x0` (expected — that offset is known-wrong and unused).
+
+Interpretation now:
+- The position **read** clearly works (ESP renders players near their real spot), so
+  `Primitive::Position = 0xec` is probably the right read location — but the write is
+  reverted. That points at the assembly/physics solver re-simulating position from the
+  part's **CFrame** every step. The dump has no `CFrame` offset, so we can't write the
+  true source of truth yet.
+- New button: **"probe primitive floats (+0xA0..+0x1C0)"** prints the raw floats around
+  the root part's primitive to the log. Send those numbers back — they let us find the
+  real CFrame/Position/Size layout without a full re-dump.
+- Alternatively: re-dump the client and include `BasePart::CFrame` / the primitive's
+  CFrame (rotation + translation) offset.
 
 ### 4.2 ESP boxes sit slightly high / float at distance
-`Primitive::Size (0x1bc)` reads ~0 on this build, so each part's 8 corners collapsed onto
-its centre and the box shrank + drifted above the character (worse at distance). The old
-1×1×1 fallback is replaced with **canonical Roblox body-part sizes** keyed by part name
-(`esp.cpp → CanonicalPartSize()`): Head 2×1×1, torso 2×2×1, arms/legs 1×2×1, hands/feet
-1×1×1. The real `Size` read is still preferred when it's non-zero. The debug tab's
-**`part size read`** tells you which path is active.
+`Primitive::Size (0x1bc)` reads ~0 and `Primitive::Rotation (0xc8)` can be garbage on this
+build. The old box code built 8 corners per part from those reads, which is what made the
+box drift above the character and wobble at distance. The box path now **ignores Size and
+Rotation entirely**: it builds one world-space axis-aligned box from each part's centre +
+its canonical body size (`esp.cpp → CanonicalPartSize()`: Head 2×1×1, torso 2×2×1,
+arms/legs 1×2×1, hands/feet 1×1×1), then projects that single box's 8 corners. This is
+stable and distance-independent as long as `Primitive::Position (0xec)` reads are correct.
 
 ### 4.3 FOV changer
 Was writing **degrees** into a field Roblox stores in **radians** — 70 became ~4010°,
@@ -275,6 +284,9 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
+(wip)  Liquid-glass UI remake: layered gradients, accent bloom, animated shimmer
+       + aurora, glowing toggles/sliders/nav; ESP box rebuilt from canonical
+       sizes (no Size/Rotation reads); debug "probe primitive floats" button
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
        infinite jump; skybox periodic reapply; delete uncompiled ImGui extras
