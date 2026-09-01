@@ -101,6 +101,10 @@ namespace features {
     static constexpr DWORD k_target_search_interval_ms = 100;
     static constexpr DWORD k_aim_update_interval_ms = 8;
 
+    // wall-check helper is defined below FindPartForPlayer(), but target search
+    // needs to call it, so declare it here first.
+    static bool LineOfSightClear(const AimVec3& from, const AimVec3& to, uintptr_t skip_player);
+
     static uintptr_t GetPartFromSkeleton(const cache::SkeletonEntity& skel, int part_index) {
         switch (part_index) {
         case 0: return skel.head;
