@@ -330,6 +330,11 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        team check exposed on the aimbot page (shared global, already filtered
        in cache); wall check (line-of-sight vs other players) added to aimbot
        (no lock through a player) and ESP (hide occluded players), persisted.
+(wip)  UI restyled to a modern web-app / "CSS-style" dark theme: neutral
+       slate surfaces + 1px borders + soft shadows + your red accent, solid
+       accent segmented tabs, uppercase section labels, accent page-title bar.
+       Kept ImGui (no browser/CSS engine): user asked about CSS, chose to
+       restyle ImGui instead. All pages/features/log copy+clear unchanged.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
@@ -363,9 +368,9 @@ bf8e898 Change menu toggle key from INSERT to HOME
 
 ## 11. TL;DR for whoever picks this up
 
-1. **Run the two write tests in the debug tab.** Click teleport (and the position-corrector
-   half of flight) are still blocked on that measurement. Infinite jump no longer depends on
-   it (it writes Humanoid fields now), so test it separately.
+1. **Run the two write tests in the debug tab.** Click teleport is still partly blocked
+   on that measurement. Infinite jump and flight now drive **velocity** (confirmed
+   working) rather than position, so test those separately.
 2. If the position write doesn't stick → re-dump `Primitive::Position` and `Primitive::Size`.
 3. Check `part size read` in the same tab to settle the ESP box offset.
 4. Read the skybox status string in the world tab before touching that feature.
