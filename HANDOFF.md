@@ -2,6 +2,7 @@
 
 **Repo:** `Glockerz/roblox-external`
 **Branch:** `arena/01a05e8a-roblox-external` (`main` untouched by request)
+**Last commit:** `9c56489`
 **Target client:** `version-f5a60436d48947d3` (`0.736.0.7361348`)
 
 A Roblox usermode **external** cheat. It never injects — it reads/writes the Roblox
@@ -274,7 +275,7 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
-(wip)  Fix rainbow accent not resetting; red accent restored; compact + glassier
+9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
        infinite jump; skybox periodic reapply; delete uncompiled ImGui extras
 5897afd Glassmorphic UI overhaul: frosted panels, soft shadows, indigo accent,
