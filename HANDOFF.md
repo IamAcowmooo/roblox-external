@@ -58,7 +58,7 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | Hitbox expander | ❓ Unverified | |
 | Inventory checker | ✅ **Confirmed working** | Hold key with cursor over a player |
 | FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
-| **Infinite jump** | ✅ **Confirmed working** | Engine-driven: `Humanoid::Jump = true` + `JumpPower` re-asserted each frame space is held |
+| **Infinite jump** | ✅ **Confirmed working** | Edge-triggered: each tap of space writes `AssemblyLinearVelocity.y = jump power` — jumps chain mid-air (hold no longer rockets up) |
 | **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
 | **Click teleport** | ⚠️ Partly working | TP'd to cursor in 1st person; 3rd person + windowed fixed but unverified |
 | **Skybox changer** | ❌ **Broken** | Invalidation-order fix applied, unverified — see §4.4 |
@@ -127,10 +127,12 @@ Five mechanisms tried:
 - **Flight** now writes the *desired* `AssemblyLinearVelocity` (move dir × speed) every
   frame instead of zeroing it, so the solver agrees with the position write instead of
   fighting it — collisions still disabled while flying.
-- **Infinite jump** no longer writes position/velocity at all: it writes
-  `Humanoid::Jump = true` + `JumpPower` each frame space is held, so the engine performs
-  the jump itself. (This mirrors the one mechanism known to work — walkspeed — which is
-  also a Humanoid-field write, not a Primitive write.)
+- **Infinite jump** is now edge-triggered on space and writes the **upward velocity**
+  directly (`AssemblyLinearVelocity.y = jump power`, SET not +=) — one jump per tap,
+  works mid-air so jumps chain forever, gravity still arcs each one. The old
+  hold-space version re-asserted `Humanoid::Jump = true` every frame, which is why
+  holding space rocketed the character straight up. (Velocity write is confirmed
+  working via the debug-tab "test VELOCITY write" button.)
 
 **Key evidence:** walkspeed (a **Humanoid** field write) works, and now
 **`AssemblyLinearVelocity` (a Primitive write) is confirmed working too** ("test velocity"
@@ -299,7 +301,8 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        tabs stay at the TOP. Decoded the float probe: Position/Rotation/Size
        confirmed, 2nd CFrame at 0x110/0x134; flight + click teleport now write
        both positions. Second probe re-confirmed the layout; velocity write
-       confirmed working; infinite jump confirmed working (engine-driven).
+       confirmed working; infinite jump rebuilt as edge-triggered velocity
+       impulses (per-tap, mid-air chainable) instead of hold-to-ascend.
        both positions; write-test button reports both deltas.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier

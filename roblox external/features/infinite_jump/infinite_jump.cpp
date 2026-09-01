@@ -7,28 +7,36 @@
 
 namespace features {
 
-    // Method 2 - engine driven.
+    // True infinite jump: each fresh press of space = ONE jump impulse, and it
+    // works mid-air, so you can tap-tap-tap to chain jumps forever.
     //
-    // The old approach ran the jump arc ourselves by writing Position every frame.
-    // That is unreliable because the humanoid state machine and the assembly solver
-    // overwrite Position / velocity on every physics step, so the writes never
-    // stick. Instead we ask the Humanoid itself to jump: keep JumpPower synced to
-    // the slider and re-assert Humanoid::Jump = true every frame the space bar is
-    // held. The engine performs the jump with its own physics, and because we keep
-    // re-asserting it, it fires again the instant the character can jump again -
-    // that is what makes it infinite.
+    // The old version re-asserted Humanoid::Jump = true every frame the bar was
+    // HELD, which made holding space rocket you straight up forever. Instead we
+    // edge-trigger on the press and write the upward velocity directly — the
+    // velocity write is the one Primitive write confirmed working, and because
+    // it doesn't care whether you're grounded, jumps chain in the air. Gravity
+    // still arcs each jump back down, so it feels like jumping, not flying.
+
+    static bool s_space_was_down = false;
 
     void RunInfiniteJump() {
-        if (!infinite_jump_enabled) return;
-
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
-        if (!lp.valid || !is_valid_address(lp.humanoid_address)) return;
+        if (!infinite_jump_enabled || !lp.valid || !is_valid_address(lp.hrp_primitive)) {
+            s_space_was_down = false;
+            return;
+        }
 
         bool down = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-        if (down) {
-            // keep the engine's jump strength matched to the slider, then ask it to jump
-            write<float>(lp.humanoid_address + Offsets::Humanoid::JumpPower, infinite_jump_power);
-            write<uint8_t>(lp.humanoid_address + Offsets::Humanoid::Jump, 1);
-        }
+        bool pressed = down && !s_space_was_down;   // fire once per press
+        s_space_was_down = down;
+        if (!pressed) return;
+
+        // set (not add) the vertical velocity so each tap gives a clean, equal
+        // jump regardless of how fast you were falling
+        float vel[3] = {};
+        read_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
+        vel[1] = infinite_jump_power;
+        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
     }
 }
+
