@@ -191,6 +191,9 @@ namespace features {
         }
 
         write_raw(lp.hrp_primitive + Offsets::Primitive::Position, s_pos, sizeof(s_pos));
+        // the primitive also holds a 2nd CFrame (0x110) whose translation re-syncs
+        // the one at Position - write both so the position write actually lands
+        write_raw(lp.hrp_primitive + Offsets::Primitive::Position2, s_pos, sizeof(s_pos));
 
         // Method 2 - instead of zeroing velocity (which just lets gravity win in
         // between our writes and fight the position write), tell the solver where

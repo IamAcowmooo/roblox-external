@@ -108,6 +108,8 @@ namespace features {
         };
 
         write_raw(lp.hrp_primitive + Offsets::Primitive::Position, target, sizeof(target));
+        // 2nd CFrame translation (0x134) re-syncs Position - write both
+        write_raw(lp.hrp_primitive + Offsets::Primitive::Position2, target, sizeof(target));
 
         float zero[3] = { 0.0f, 0.0f, 0.0f };
         write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, zero, sizeof(zero));

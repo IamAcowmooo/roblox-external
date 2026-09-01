@@ -75,7 +75,7 @@ korblox/rage, 3D ESP preview, mesh chams + memory mesh chams (see §5).
 roblox external/
   main.cpp        entry (WinMain), FeatureLoop thread, AttachLoop (auto-reconnect), render_ui()
   overlay.hpp     overlay window, D3D11, ImGui init + theme, input thread, tray icon, taskbar window
-  menu.cpp        entire GUI: ui:: widgets, left icon rail + content well, all pages
+  menu.cpp        entire GUI: ui:: widgets, top tab bar + content well, all pages
   globals.h       every setting as an inline global + LogLine() + g_request_exit
   memory.h/.cpp   RPM/WPM wrappers, instance struct, name/classname/children readers
   process.h/.cpp  FindRoblox(), GetRobloxWindow()
@@ -140,32 +140,33 @@ invalid `hrp_primitive` pointer — *not* at the feature logic.
 for this client build. The root part is currently resolved by **name** instead
 (`"HumanoidRootPart"` among the character's children), which does work since ESP renders.
 
-**⏭️ NEXT STEP — run this before writing any more code:**
-Debug tab → **"test POSITION write (+10 studs up)"** and **"test VELOCITY write"**.
+**⏭️ NEXT STEP — re-test the position write (now writes BOTH CFrames):**
+Debug tab → **"test POSITION write (+10 studs up)"** (now writes `0xEC` **and** `0x134`
+and reports each delta) and **"test VELOCITY write"**.
 
-**Result so far (from the user):** the position write does **not** stick, and
-`hrp via 0x478` reads `0x0` (expected — that offset is known-wrong and unused).
-
-Interpretation now:
-- The position **read** clearly works (ESP renders players near their real spot), so
-  `Primitive::Position = 0xec` is probably the right read location — but the write is
-  reverted. That points at the assembly/physics solver re-simulating position from the
-  part's **CFrame** every step. The dump has no `CFrame` offset, so we can't write the
-  true source of truth yet.
-- New button: **"probe primitive floats (+0xA0..+0x1C0)"** prints the raw floats around
-  the root part's primitive to the log. Send those numbers back — they let us find the
-  real CFrame/Position/Size layout without a full re-dump.
-- Alternatively: re-dump the client and include `BasePart::CFrame` / the primitive's
-  CFrame (rotation + translation) offset.
+**Probe result (user pasted it) — offsets are now CONFIRMED:**
+```
++0x0C8..0x0F4 : CFrame #1   rotation = -0.64,0,1,0 / 0,1,0 / 0.64,0,0.77
+                              position = (-41.37, 3.11, -10.50)   -> 0xEC ✓
++0x0F8..0x10C : AssemblyLinear/AngularVelocity (0,0,0 idle)        -> 0xF8 ✓ / 0x104 ✓
++0x110..0x13C : CFrame #2   SAME rotation, position at 0x134       -> 0x110 / 0x134
++0x1BC..0x1C4 : Size = (2.00, 2.00, 1.00)                          -> 0x1BC ✓
+```
+So `Primitive::Position (0xec)`, `Rotation (0xc8)`, `Size (0x1bc)` are all **correct**.
+The position **write** is reverted because the primitive holds a **second CFrame at
+0x110** (translation `0x134`) that re-syncs the one at `0xC8`. Flight + click teleport
+now write **both** `Position` and `Position2` every frame; the debug button writes both
+and reports each delta so we can confirm which (if either) sticks. If neither sticks,
+the real source of truth is a 3rd structure (assembly solver) and we need a fuller dump.
 
 ### 4.2 ESP boxes sit slightly high / float at distance
-`Primitive::Size (0x1bc)` reads ~0 and `Primitive::Rotation (0xc8)` can be garbage on this
-build. The old box code built 8 corners per part from those reads, which is what made the
-box drift above the character and wobble at distance. The box path now **ignores Size and
-Rotation entirely**: it builds one world-space axis-aligned box from each part's centre +
-its canonical body size (`esp.cpp → CanonicalPartSize()`: Head 2×1×1, torso 2×2×1,
-arms/legs 1×2×1, hands/feet 1×1×1), then projects that single box's 8 corners. This is
-stable and distance-independent as long as `Primitive::Position (0xec)` reads are correct.
+`Primitive::Size (0x1bc)` and `Primitive::Rotation (0xc8)` are now **confirmed valid**
+(the float probe shows Size = (2,2,1) and a sane rotation matrix). The box path still
+**ignores Size/Rotation** and builds one world-space axis-aligned box per part from its
+centre + canonical body size (`esp.cpp → CanonicalPartSize()`: Head 2×1×1, torso 2×2×1,
+arms/legs 1×2×1, hands/feet 1×1×1), then projects that single box's 8 corners. If the box
+still floats at distance, the remaining suspect is the world-to-screen projection, not
+the part data.
 
 ### 4.3 FOV changer
 Was writing **degrees** into a field Roblox stores in **radians** — 70 became ~4010°,
@@ -284,10 +285,12 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
-(wip)  UI restyled to match ff0l/custom-ui-1's Rose glass: muted warm gradient
-       (no bright catch-lights/reflections), faint outline + top highlight, soft
-       shadow; tabs moved back to the TOP (animated accent pill); log "copy"
-       button (copies whole log to clipboard) next to "clear"
+(wip)  UI restyled to the reference's exact glass recipe (Rose): animated
+       accent backdrop + translucent Header.Fade->Surface.Fade gradient + quiet
+       outline/shadow, flat Knob-colour controls (no glow/spark/catch-light);
+       tabs stay at the TOP. Decoded the float probe: Position/Rotation/Size
+       confirmed, 2nd CFrame at 0x110/0x134; flight + click teleport now write
+       both positions; write-test button reports both deltas.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven

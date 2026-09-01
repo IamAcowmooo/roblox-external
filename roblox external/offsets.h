@@ -389,13 +389,17 @@ namespace Offsets {
          inline constexpr uintptr_t Flags = 0x1b6;
          inline constexpr uintptr_t Material = 0x0;
          inline constexpr uintptr_t Owner = 0x210;
-         // Position and Size are SUSPECT on this build - the write test in the
-         // debug tab + "part size read" decide whether they're correct. If the
-         // position write doesn't stick, re-dump both.
-         inline constexpr uintptr_t Position = 0xec;
-         inline constexpr uintptr_t Rotation = 0xc8;
-         inline constexpr uintptr_t Size = 0x1bc;
-         inline constexpr uintptr_t Validate = 0x6;
+        // CONFIRMED by the float probe: the primitive holds a full CFrame at
+        // Rotation(0xc8)..Position(0xf4), plus a SECOND CFrame at 0x110 whose
+        // translation is at 0x134 (rotation 0x110..0x128). Position/Rotation/Size
+        // all read correctly; the position WRITE alone gets re-synced from the
+        // second CFrame, so write BOTH positions together (flight/click teleport).
+        inline constexpr uintptr_t Position = 0xec;
+        inline constexpr uintptr_t Rotation = 0xc8;
+        inline constexpr uintptr_t Size = 0x1bc;
+        inline constexpr uintptr_t CFrame2 = 0x110;    // 2nd CFrame (rotation)
+        inline constexpr uintptr_t Position2 = 0x134;  // 2nd CFrame translation
+        inline constexpr uintptr_t Validate = 0x6;
     }
 
     namespace PrimitiveFlags {
