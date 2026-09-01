@@ -58,8 +58,8 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | Hitbox expander | ❓ Unverified | |
 | Inventory checker | ✅ **Confirmed working** | Hold key with cursor over a player |
 | FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
+| **Infinite jump** | ✅ **Confirmed working** | Engine-driven: `Humanoid::Jump = true` + `JumpPower` re-asserted each frame space is held |
 | **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
-| **Infinite jump** | ❌ **Broken** | Same root cause as flight |
 | **Click teleport** | ⚠️ Partly working | TP'd to cursor in 1st person; 3rd person + windowed fixed but unverified |
 | **Skybox changer** | ❌ **Broken** | Invalidation-order fix applied, unverified — see §4.4 |
 | Config save/load/rename | ❓ Unverified | Files under `GetConfigDir()` |
@@ -121,7 +121,7 @@ Five mechanisms tried:
 | 2 | Write `Primitive::Position` | **Sinks through the floor** (collision solver resolves the overlap) |
 | 3 | `PlatformStand = true` + velocity | Ragdolls, still falls |
 | 4 | Position + collisions disabled, self-integrated arc | Still broken |
-| 5 | Velocity-driven flight + engine-driven jump | Unverified (see below) |
+| 5 | Velocity-driven flight + engine-driven jump | **Infinite jump ✅ confirmed; flight re-test pending** |
 
 **Latest attempt (unverified, needs the debug-tab write test):**
 - **Flight** now writes the *desired* `AssemblyLinearVelocity` (move dir × speed) every
@@ -132,9 +132,10 @@ Five mechanisms tried:
   the jump itself. (This mirrors the one mechanism known to work — walkspeed — which is
   also a Humanoid-field write, not a Primitive write.)
 
-**Key evidence:** walkspeed (a **Humanoid** field write) works. Everything that writes a
-**Primitive** field fails. That points at either a wrong `Primitive::*` offset or an
-invalid `hrp_primitive` pointer — *not* at the feature logic.
+**Key evidence:** walkspeed (a **Humanoid** field write) works, and now
+**`AssemblyLinearVelocity` (a Primitive write) is confirmed working too** ("test velocity"
+button). That proves `hrp_primitive` is valid and the Primitive write path works — the
+remaining question is purely *which position/CFrame field the solver actually obeys*.
 
 **Also confirmed:** `Humanoid::HumanoidRootPart (0x478)` reads back **`0x0`** — it is wrong
 for this client build. The root part is currently resolved by **name** instead
@@ -144,7 +145,8 @@ for this client build. The root part is currently resolved by **name** instead
 Debug tab → **"test POSITION write (+10 studs up)"** (now writes `0xEC` **and** `0x134`
 and reports each delta) and **"test VELOCITY write"**.
 
-**Probe result (user pasted it) — offsets are now CONFIRMED:**
+**Probe result (user pasted it) — offsets are now CONFIRMED (twice, two independent
+samples at different positions/orientations):**
 ```
 +0x0C8..0x0F4 : CFrame #1   rotation = -0.64,0,1,0 / 0,1,0 / 0.64,0,0.77
                               position = (-41.37, 3.11, -10.50)   -> 0xEC ✓
@@ -158,6 +160,12 @@ The position **write** is reverted because the primitive holds a **second CFrame
 now write **both** `Position` and `Position2` every frame; the debug button writes both
 and reports each delta so we can confirm which (if either) sticks. If neither sticks,
 the real source of truth is a 3rd structure (assembly solver) and we need a fuller dump.
+
+**Second probe sample** (different spawn, player at `(-24.63, 3.11, 164.76)`, yawed ~90°):
+rotation `0xC8` = `-0.04,1,-1 …`, position `0xEC` = `(-24.63, 3.11, 164.76)`,
+CFrame #2 position `0x134` = identical, and this time **velocity `0xF8` = `(-15.99, 0, 0.64)`
+was non-zero** — confirming the velocity read/write is live and matches the character's
+actual motion. Layout is byte-for-byte consistent with the first sample.
 
 ### 4.2 ESP boxes sit slightly high / float at distance
 `Primitive::Size (0x1bc)` and `Primitive::Rotation (0xc8)` are now **confirmed valid**
@@ -290,6 +298,8 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        outline/shadow, flat Knob-colour controls (no glow/spark/catch-light);
        tabs stay at the TOP. Decoded the float probe: Position/Rotation/Size
        confirmed, 2nd CFrame at 0x110/0x134; flight + click teleport now write
+       both positions. Second probe re-confirmed the layout; velocity write
+       confirmed working; infinite jump confirmed working (engine-driven).
        both positions; write-test button reports both deltas.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
