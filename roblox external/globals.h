@@ -41,6 +41,11 @@ inline float smoothing_y = 4.0f;
 inline float fov_size = 150.0f;
 inline bool show_fov = false;
 
+// humanizer: reaction delay + eased/curved aim + a little decaying jitter so the
+// aimbot moves like a person instead of snapping instantly.
+inline bool humanizer_enabled = false;
+inline float humanizer_strength = 0.5f;   // 0..1
+
 inline bool esp_enabled = false;
 inline bool box_esp = false;
 inline int box_esp_type = 0;

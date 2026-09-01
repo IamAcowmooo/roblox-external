@@ -94,6 +94,8 @@ namespace config {
         WriteEntry(f, "prediction_y", prediction_y);
         WriteEntry(f, "smoothing_x", smoothing_x);
         WriteEntry(f, "smoothing_y", smoothing_y);
+        WriteEntry(f, "humanizer_enabled", humanizer_enabled);
+        WriteEntry(f, "humanizer_strength", humanizer_strength);
         WriteEntry(f, "fov_size", fov_size);
         WriteEntry(f, "show_fov", show_fov);
 
@@ -189,6 +191,8 @@ namespace config {
             if (ReadLine(line, "prediction_y", prediction_y)) continue;
             if (ReadLine(line, "smoothing_x", smoothing_x)) continue;
             if (ReadLine(line, "smoothing_y", smoothing_y)) continue;
+            if (ReadLine(line, "humanizer_enabled", humanizer_enabled)) continue;
+            if (ReadLine(line, "humanizer_strength", humanizer_strength)) continue;
             if (ReadLine(line, "fov_size", fov_size)) continue;
             if (ReadLine(line, "show_fov", show_fov)) continue;
 

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cfloat>
+#include <cstdlib>
 #include "aimbot.h"
 #include "globals.h"
 #include "memory.h"
@@ -197,11 +198,14 @@ namespace features {
             }
         }
 
+        HumanizerJitter(target_pos);
+
         float target_rot[9]{};
         ComputeLookAt(cam_pos, target_pos, target_rot);
 
-        float factor_x = 1.0f / smoothing_x;
-        float factor_y = 1.0f / smoothing_y;
+        float progress = HumanizerProgress();
+        float factor_x = progress / smoothing_x;
+        float factor_y = progress / smoothing_y;
         if (factor_x > 1.0f) factor_x = 1.0f;
         if (factor_y > 1.0f) factor_y = 1.0f;
 
@@ -233,6 +237,8 @@ namespace features {
             }
         }
 
+        HumanizerJitter(target_pos);
+
         AimVec2 target_screen{};
         if (!AimWorldToScreen(target_pos, target_screen, view, viewport)) return;
 
@@ -255,8 +261,9 @@ namespace features {
         float dx = target_screen.x - (float)cur.x;
         float dy = target_screen.y - (float)cur.y;
 
-        float factor_x = 1.0f / smoothing_x;
-        float factor_y = 1.0f / smoothing_y;
+        float progress = HumanizerProgress();
+        float factor_x = progress / smoothing_x;
+        float factor_y = progress / smoothing_y;
         if (factor_x > 1.0f) factor_x = 1.0f;
         if (factor_y > 1.0f) factor_y = 1.0f;
 
@@ -277,6 +284,50 @@ namespace features {
         input.mi.dx = move_x;
         input.mi.dy = move_y;
         SendInput(1, &input, sizeof(INPUT));
+    }
+
+    // ---------------------------------------------------------------------
+    // Humanizer: makes the aim look human instead of instant.
+    //   - reaction delay after a target is (re)acquired (nothing moves at first)
+    //   - eased acceleration into the aim (slow -> fast -> settle)
+    //   - small decaying jitter so the crosshair never sits perfectly still
+    // Strength scales the reaction time and jitter; off = the old instant aim.
+    // ---------------------------------------------------------------------
+    static uintptr_t s_hum_target      = 0;
+    static DWORD     s_hum_acquire_ms  = 0;
+    static DWORD     s_hum_reaction_ms = 0;
+    static float     s_hum_jitter_x = 0.0f;
+    static float     s_hum_jitter_y = 0.0f;
+
+    static void HumanizerOnTarget(uintptr_t target) {
+        if (target == s_hum_target) return;
+        s_hum_target = target;
+        s_hum_acquire_ms = GetTickCount();
+        // reaction time grows with strength (a "more human" setting is slower to react)
+        float strength = humanizer_enabled ? humanizer_strength : 0.0f;
+        s_hum_reaction_ms = 60 + (DWORD)((rand() % 160) * (0.4f + 0.6f * strength));
+        s_hum_jitter_x = ((rand() % 100) / 50.0f - 1.0f) * 0.5f * strength;
+        s_hum_jitter_y = ((rand() % 100) / 50.0f - 1.0f) * 0.5f * strength;
+    }
+
+    // 0 = still reacting (don't move), 1 = full speed. Eases in over ~220ms.
+    static float HumanizerProgress() {
+        if (!humanizer_enabled) return 1.0f;
+        DWORD now = GetTickCount();
+        DWORD elapsed = (now >= s_hum_acquire_ms) ? (now - s_hum_acquire_ms) : 0;
+        if (elapsed < s_hum_reaction_ms) return 0.0f;
+        float t = (float)(elapsed - s_hum_reaction_ms) / 220.0f;
+        if (t > 1.0f) t = 1.0f;
+        float e = t * t * (3.0f - 2.0f * t);      // smoothstep
+        return 0.25f + 0.75f * e;                  // keep a floor so it always tracks
+    }
+
+    static void HumanizerJitter(AimVec3& target) {
+        if (!humanizer_enabled) return;
+        target.x += s_hum_jitter_x;
+        target.y += s_hum_jitter_y;
+        s_hum_jitter_x *= 0.86f;   // decay the wobble so it settles
+        s_hum_jitter_y *= 0.86f;
     }
 
     void RunAimbot() {
@@ -309,6 +360,8 @@ namespace features {
             uintptr_t found_part = 0;
             uintptr_t found_player = 0;
             if (!FindClosestTarget(view, viewport, fov_center, found_part, found_player)) return;
+
+            HumanizerOnTarget(found_part);
 
             if (aimbot_aim_type == 0)
                 AimAtPrimitive(found_part);
@@ -348,6 +401,7 @@ namespace features {
                     bool do_aim = (now_aim - last_aim_update_time) >= k_aim_update_interval_ms;
                     if (do_aim) {
                         last_aim_update_time = now_aim;
+                        HumanizerOnTarget(locked_head);
                         if (aimbot_aim_type == 0)
                             AimAtPrimitive(locked_head);
                         else

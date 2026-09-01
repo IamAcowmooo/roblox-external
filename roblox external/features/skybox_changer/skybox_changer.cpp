@@ -320,17 +320,27 @@ namespace features {
             write<bool>(render_view + Offsets::RenderView::LightingValid, false);
         }
 
-        int failed_count = 0;
+        const char* face_values[6] = { preset.up, preset.dn, preset.ft, preset.bk, preset.lf, preset.rt };
 
-        if (!write_string_safe(face_addrs[0], preset.up)) failed_count++;
-        if (!write_string_safe(face_addrs[1], preset.dn)) failed_count++;
-        if (!write_string_safe(face_addrs[2], preset.ft)) failed_count++;
-        if (!write_string_safe(face_addrs[3], preset.bk)) failed_count++;
-        if (!write_string_safe(face_addrs[4], preset.lf)) failed_count++;
-        if (!write_string_safe(face_addrs[5], preset.rt)) failed_count++;
+        int failed_count = 0;
+        for (int i = 0; i < 6; i++)
+            if (!write_string_safe(face_addrs[i], face_values[i])) failed_count++;
 
         if (failed_count > 0) {
             std::snprintf(skybox_debug_msg, sizeof(skybox_debug_msg), "FAIL: %d faces failed to write", failed_count);
+            skybox_written = false;
+            return;
+        }
+
+        // verify the writes actually landed by reading each face straight back
+        int bad_readback = 0;
+        for (int i = 0; i < 6; i++) {
+            std::string rb = fetchstring(face_addrs[i]);
+            if (rb != face_values[i]) bad_readback++;
+        }
+        if (bad_readback > 0) {
+            std::snprintf(skybox_debug_msg, sizeof(skybox_debug_msg),
+                          "WROTE but %d/6 faces read back wrong (offsets stale?)", bad_readback);
             skybox_written = false;
             return;
         }

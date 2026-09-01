@@ -569,6 +569,11 @@ void RenderMenu() {
             }
             ui::Slider("smooth x", &smoothing_x, 2.0f, 20.0f, "%.1f");
             ui::Slider("smooth y", &smoothing_y, 2.0f, 20.0f, "%.1f");
+            ui::Toggle("humanizer", &humanizer_enabled);
+            if (humanizer_enabled) {
+                ui::Slider("humanize amount", &humanizer_strength, 0.0f, 1.0f, "%.2f");
+                ImGui::TextDisabled("reaction delay + curved, slightly jittery aim");
+            }
             ui::Slider("fov size", &fov_size, 10.0f, 500.0f);
             ui::Toggle("show fov", &show_fov);
         }

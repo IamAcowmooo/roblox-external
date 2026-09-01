@@ -10,6 +10,7 @@
 #include "memory.h"
 #include "cache.h"
 #include "offsets.h"
+#include "game.h"
 #include "imgui/imgui.h"
 
 namespace features {
@@ -49,10 +50,6 @@ namespace features {
         return ReadRaw(address, &out, sizeof(out));
     }
 
-    static bool ReadMatrix(uint64_t address, Matrix4& out) {
-        return ReadRaw(address, &out, sizeof(out));
-    }
-
     static float LengthSq(const Vec3& v) {
         return v.x * v.x + v.y * v.y + v.z * v.z;
     }
@@ -76,12 +73,70 @@ namespace features {
     }
 
 
+    static instance cached_camera{};
+    static DWORD last_camera_lookup = 0;
+
+    static instance GetCameraInstance() {
+        DWORD now = GetTickCount();
+        if (cached_camera.is_valid() && (now - last_camera_lookup) < 2000)
+            return cached_camera;
+
+        instance dm = game::ReadDatamodel(g_base_address);
+        if (!dm.is_valid()) return instance{};
+        instance ws = dm.read_service("Workspace");
+        if (!ws.is_valid()) return instance{};
+        cached_camera = read<instance>(ws.address + Offsets::Workspace::CurrentCamera);
+        last_camera_lookup = now;
+        return cached_camera;
+    }
+
+    static float Dot3(const Vec3& a, const Vec3& b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    // Build the clip matrix from the CAMERA itself (position/rotation/fov), not
+    // from VisualEngine::ViewMatrix. The camera offsets are the ones every other
+    // feature uses and are confirmed working, while the ViewMatrix layout on this
+    // client was the thing making boxes drift off the character with distance.
     static bool GetCamera(Matrix4& view, Vec2& viewport) {
         instance ve = read<instance>(g_base_address + Offsets::VisualEngine::Pointer);
         if (!ve.is_valid()) return false;
-        if (!ReadMatrix(ve.address + Offsets::VisualEngine::ViewMatrix, view)) return false;
         if (!ReadVec2(ve.address + Offsets::VisualEngine::Dimensions, viewport)) return false;
         if (viewport.x <= 0.0f || viewport.y <= 0.0f) return false;
+
+        instance cam = GetCameraInstance();
+        if (!cam.is_valid()) return false;
+
+        Vec3 pos{};
+        float rot[9]{};
+        if (!ReadVec3(cam.address + Offsets::Camera::Position, pos)) return false;
+        if (!ReadRaw(cam.address + Offsets::Camera::Rotation, rot, sizeof(rot))) return false;
+
+        float fov = read<float>(cam.address + Offsets::Camera::FieldOfView);
+        if (fov < 0.1f || fov > 3.0f) fov = 1.2217f;   // ~70 deg fallback
+
+        // camera basis out of the Roblox rotation matrix (column-major: right/up/-forward)
+        Vec3 right = {  rot[0],  rot[3],  rot[6] };
+        Vec3 up    = {  rot[1],  rot[4],  rot[7] };
+        Vec3 fwd   = { -rot[2], -rot[5], -rot[8] };
+
+        float tan_half = tanf(fov * 0.5f);
+        float aspect   = viewport.x / viewport.y;
+        float scale_x  = 1.0f / (tan_half * aspect);
+        float scale_y  = 1.0f / tan_half;
+
+        // column-major matrix matching WorldToScreen's layout:
+        //   clip.x = x*m0 + y*m1 + z*m2 + m3  = dot(right, p-pos) * scale_x
+        //   clip.y = x*m4 + y*m5 + z*m6 + m7  = dot(up,    p-pos) * scale_y
+        //   clip.w = x*m12+ y*m13+ z*m14+ m15 = dot(fwd,   p-pos)
+        float* m = view.data;
+        m[0]  = right.x * scale_x;  m[1]  = right.y * scale_x;  m[2]  = right.z * scale_x;
+        m[3]  = -Dot3(right, pos) * scale_x;
+        m[4]  = up.x * scale_y;     m[5]  = up.y * scale_y;     m[6]  = up.z * scale_y;
+        m[7]  = -Dot3(up, pos) * scale_y;
+        m[8]  = 0.0f;               m[9]  = 0.0f;               m[10] = 0.0f;               m[11] = 0.0f;
+        m[12] = fwd.x;              m[13] = fwd.y;              m[14] = fwd.z;
+        m[15] = -Dot3(fwd, pos);
         return true;
     }
 

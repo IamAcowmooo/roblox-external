@@ -53,15 +53,15 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | ESP boxes | ⚠️ Rewritten, re-test | Box now uses canonical sizes + one world AABB (no Size/Rotation reads) — see §4.2 |
 | ESP extras (name/health/distance/tool/skeleton/china hat) | ✅ **Confirmed working** | |
 | Chams (regular) | ✅ **Confirmed working** | Does **not** use the deleted mesh backend |
-| Aimbot + FOV circle | ✅ **Confirmed working** | No keybind = always on; FOV circle fixed to screen centre |
+| Aimbot + FOV circle | ✅ **Confirmed working** | No keybind = always on; FOV circle fixed to screen centre; **humanizer option added** (reaction delay + eased/jittery aim) |
 | Noclip | ✅ **Confirmed working** | No keybind = always on |
 | Hitbox expander | ❓ Unverified | |
 | Inventory checker | ✅ **Confirmed working** | Cursor over a player (keybind optional) |
 | FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
-| **Infinite jump** | ✅ **Confirmed working** | Edge-triggered: each tap of space writes `AssemblyLinearVelocity.y = jump power` — jumps chain mid-air (hold no longer rockets up) |
-| **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
+| **Infinite jump** | ⚠️ Re-test | Impulse now re-asserted for ~18ms per tap so the write can't be raced by the physics step (was "sometimes works, usually not at set power") |
+| **Flight** | ⚠️ Re-test | Rewritten as **PlatformStand + velocity** (velocity is the one write that sticks; position writes were the "iffy" part) — see §4.1 |
 | **Click teleport** | ⚠️ Partly working | Now fires on **left-click** (no keybind); ray-through-cursor fix unverified |
-| **Skybox changer** | ❌ **Broken** | Invalidation-order fix applied, unverified — see §4.4 |
+| **Skybox changer** | ❌ **Broken** | Now verifies face write-back and reports stale offsets — see §4.4 |
 | Config save/load/rename | ❓ Unverified | Files under `GetConfigDir()` |
 
 **Removed on request:** Blade Ball, Rivals skin changer, Phantom Forces special-casing,
@@ -123,16 +123,20 @@ Five mechanisms tried:
 | 4 | Position + collisions disabled, self-integrated arc | Still broken |
 | 5 | Velocity-driven flight + engine-driven jump | **Infinite jump ✅ confirmed; flight re-test pending** |
 
-**Latest attempt (unverified, needs the debug-tab write test):**
-- **Flight** now writes the *desired* `AssemblyLinearVelocity` (move dir × speed) every
-  frame instead of zeroing it, so the solver agrees with the position write instead of
-  fighting it — collisions still disabled while flying.
-- **Infinite jump** is now edge-triggered on space and writes the **upward velocity**
-  directly (`AssemblyLinearVelocity.y = jump power`, SET not +=) — one jump per tap,
-  works mid-air so jumps chain forever, gravity still arcs each one. The old
-  hold-space version re-asserted `Humanoid::Jump = true` every frame, which is why
-  holding space rocketed the character straight up. (Velocity write is confirmed
-  working via the debug-tab "test VELOCITY write" button.)
+**Latest attempt (needs re-test):**
+- **Flight** no longer writes position at all (that was the "iffy" write — the
+  assembly solver overwrote it every physics step). It now sets
+  `Humanoid::PlatformStand = true` + zeroes `World::Gravity` so nothing fights us,
+  then drives **`AssemblyLinearVelocity`** from camera-relative WASD each tick
+  (idle = hover). Collisions still disabled while flying; PlatformStand/gravity/collisions
+  restored on stop.
+- **Infinite jump** still edge-triggers on space, but the impulse is now **re-asserted
+  for ~18ms** (several physics steps) instead of a single frame, so the game's own
+  physics write can no longer swallow it. `vel.y` is still SET (never +=), so every
+  tap gives one clean jump at `infinite_jump_power` and rapid taps chain.
+- **Aimbot humanizer** added: reaction delay after (re)acquiring a target + eased
+  (smoothstep) aim acceleration + small decaying jitter, with a `humanizer_strength`
+  0..1 slider. Off = the old instant aim.
 
 **Key evidence:** walkspeed (a **Humanoid** field write) works, and now
 **`AssemblyLinearVelocity` (a Primitive write) is confirmed working too** ("test velocity"
@@ -173,10 +177,12 @@ actual motion. Layout is byte-for-byte consistent with the first sample.
 `Primitive::Size (0x1bc)` and `Primitive::Rotation (0xc8)` are now **confirmed valid**
 (the float probe shows Size = (2,2,1) and a sane rotation matrix). The box path still
 **ignores Size/Rotation** and builds one world-space axis-aligned box per part from its
-centre + canonical body size (`esp.cpp → CanonicalPartSize()`: Head 2×1×1, torso 2×2×1,
-arms/legs 1×2×1, hands/feet 1×1×1), then projects that single box's 8 corners. If the box
-still floats at distance, the remaining suspect is the world-to-screen projection, not
-the part data.
+centre + canonical body size (`esp.cpp → CanonicalPartSize()`), then projects the box's
+8 corners. Part data is confirmed correct, so the remaining suspect was the projection:
+**ESP now builds its clip matrix from the camera itself** (Position/Rotation/FOV — the
+offsets every other feature uses and that are confirmed working) instead of trusting
+`VisualEngine::ViewMatrix (0x180)`, which was the thing making boxes drift off the
+character with distance. Needs an in-game re-test.
 
 ### 4.3 FOV changer
 Was writing **degrees** into a field Roblox stores in **radians** — 70 became ~4010°,
@@ -188,9 +194,12 @@ It was doing: invalidate → write textures → set `SkyValid`/`LightingValid` b
 which tells the renderer its cached sky is still valid so it never re-uploads. Now it
 invalidates *after* writing, **and** it re-applies the six face strings every 2.5s while
 enabled (a core script or the renderer reverting the sky can no longer permanently undo
-it). Still unverified in-game. The world tab prints a live status string
-(`skybox_debug_msg`) — read it: `No Sky in game`, `FAIL: RenderView invalid`,
-`Skybox applied (...)` each point somewhere different.
+it). Still unverified in-game. It now also **reads each face string back after
+writing** and reports `WROTE but N/6 faces read back wrong (offsets stale?)` if the
+writes don't actually land, so the world tab distinguishes a bad offset from a renderer
+caching problem. The world tab prints a live status string (`skybox_debug_msg`) — read
+it: `No Sky in game`, `FAIL: RenderView invalid`, `Skybox applied (...)` each point
+somewhere different.
 
 ---
 
@@ -201,7 +210,10 @@ key-by-key (57 critical offsets: 0 mismatched, 0 missing).
 
 **Known-wrong in this dump:**
 - `Humanoid::HumanoidRootPart = 0x478` → reads `0x0`. Unused; name lookup is used instead.
-- `Primitive::Position` / `Primitive::Size` → **suspect**, pending the write test.
+- `Primitive::Position (0xec)` / `Rotation (0xc8)` / `Size (0x1bc)` / velocity are all
+  **confirmed correct** by two independent float probes; only the position *write* gets
+  re-synced from the 2nd CFrame (0x110/0x134), which is why flight now avoids position
+  writes and click teleport writes both.
 
 **Entries the dump gave as `0x0`** (dumper couldn't resolve them). The previous known-good
 values were kept rather than zeroing, and none are referenced in code:
@@ -308,6 +320,11 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        click teleport fires on left-click (no keybind, ignored while menu
        open); removed the inaccurate FPS counter (overlay chip + footer);
        aimbot FOV circle fixed to the screen centre instead of the mouse.
+(wip)  Infinite jump impulse re-asserted ~18ms/tap so it can't be raced;
+       flight rewritten as PlatformStand + velocity (position writes dropped);
+       aimbot humanizer option (reaction delay + eased/jittery aim, strength
+       slider); ESP projection rebuilt from the camera instead of ViewMatrix;
+       skybox now verifies its face writes by reading them back.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
