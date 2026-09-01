@@ -325,6 +325,11 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
        aimbot humanizer option (reaction delay + eased/jittery aim, strength
        slider); ESP projection rebuilt from the camera instead of ViewMatrix;
        skybox now verifies its face writes by reading them back.
+(wip)  Fixed humanizer build error (helpers now forward-declared); collapse
+       button actually shrinks the window to the title bar and restores it;
+       team check exposed on the aimbot page (shared global, already filtered
+       in cache); wall check (line-of-sight vs other players) added to aimbot
+       (no lock through a player) and ESP (hide occluded players), persisted.
 87837e4 Liquid-glass UI remake + robust ESP box + offset probe
 9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
        UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven

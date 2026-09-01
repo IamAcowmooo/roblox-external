@@ -121,6 +121,7 @@ namespace config {
         WriteEntry(f, "box_fill_gradient", box_fill_gradient);
         WriteEntry(f, "box_fill_gradient_rotate", box_fill_gradient_rotate);
         WriteEntry(f, "team_check", team_check);
+        WriteEntry(f, "wall_check", wall_check);
 
         // colors
         WriteEntry(f, "box_esp_color", box_esp_color);
@@ -217,6 +218,7 @@ namespace config {
             if (ReadLine(line, "box_fill_gradient", box_fill_gradient)) continue;
             if (ReadLine(line, "box_fill_gradient_rotate", box_fill_gradient_rotate)) continue;
             if (ReadLine(line, "team_check", team_check)) continue;
+            if (ReadLine(line, "wall_check", wall_check)) continue;
 
             // colors
             if (ReadLine(line, "box_esp_color", box_esp_color)) continue;

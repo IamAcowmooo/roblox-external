@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cfloat>
 #include <cstdlib>
+#include <cstring>
 #include "aimbot.h"
 #include "globals.h"
 #include "memory.h"
@@ -117,6 +118,13 @@ namespace features {
         float best_dist_sq = fov_size * fov_size;
         bool found = false;
 
+        AimVec3 cam_pos{};
+        bool have_cam = false;
+        if (wall_check) {
+            float rot[9]{};
+            have_cam = GetCameraTransform(cam_pos, rot);
+        }
+
         auto skeletons_snap = cache::GetSkeletonSnapshot();
         const auto& skeletons = *skeletons_snap;
         for (const auto& skel : skeletons) {
@@ -126,6 +134,8 @@ namespace features {
 
             AimVec3 part_pos{};
             if (!AimReadRaw(part + Offsets::Primitive::Position, &part_pos, sizeof(part_pos))) continue;
+
+            if (wall_check && have_cam && !LineOfSightClear(cam_pos, part_pos, skel.player_address)) continue;
 
             AimVec2 screen_pos{};
             if (!AimWorldToScreen(part_pos, screen_pos, view, viewport)) continue;
@@ -150,6 +160,8 @@ namespace features {
                 if (entity.primitive_count == 0) continue;
 
                 AimVec3 root_pos = { entity.root_x, entity.root_y, entity.root_z };
+                if (wall_check && have_cam && !LineOfSightClear(cam_pos, root_pos, entity.player_address)) continue;
+
                 AimVec2 screen_pos{};
                 if (!AimWorldToScreen(root_pos, screen_pos, view, viewport)) continue;
 
@@ -179,6 +191,74 @@ namespace features {
             if (skel.head) return skel.head;
         }
         return 0;
+    }
+
+    // humanizer helpers (defined just before RunAimbot) — declared here so the
+    // aim functions below can call them
+    static void  HumanizerJitter(AimVec3& target);
+    static float HumanizerProgress();
+
+    // ---------------------------------------------------------------------
+    // Wall check (line-of-sight). An external can't call the game's raycast and
+    // we don't have the world primitives list offset, so this raycasts against
+    // the OTHER players' cached body parts: if a player is standing between the
+    // camera and the target, the target is treated as blocked.
+    // ---------------------------------------------------------------------
+    static void AimPartHalfExtents(const char* name, AimVec3& half) {
+        if (!name) { half = { 1.0f, 1.0f, 1.0f }; return; }
+        if (!strcmp(name, "Head"))                              { half = { 1.0f, 0.5f, 0.5f }; return; }
+        if (!strcmp(name, "HumanoidRootPart"))                  { half = { 1.0f, 1.0f, 0.5f }; return; }
+        if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { half = { 1.0f, 1.0f, 0.5f }; return; }
+        if (!strcmp(name, "LowerTorso"))                        { half = { 1.0f, 0.5f, 0.5f }; return; }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
+            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
+            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm") ||
+            !strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
+            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
+            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { half = { 0.5f, 1.0f, 0.5f }; return; }
+        half = { 0.5f, 0.5f, 0.5f };
+    }
+
+    static bool SegmentHitsAABB(const AimVec3& from, const AimVec3& to,
+                                const AimVec3& center, const AimVec3& half) {
+        float org[3] = { from.x, from.y, from.z };
+        float dir[3] = { to.x - from.x, to.y - from.y, to.z - from.z };
+        float c[3]   = { center.x, center.y, center.z };
+        float h[3]   = { half.x, half.y, half.z };
+        float tmin = 0.0f, tmax = 1.0f;
+        for (int i = 0; i < 3; ++i) {
+            float e = org[i], f = dir[i], mn = c[i] - h[i], mx = c[i] + h[i];
+            if (f > -1e-6f && f < 1e-6f) {
+                if (e < mn || e > mx) return false;
+            } else {
+                float t1 = (mn - e) / f;
+                float t2 = (mx - e) / f;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) return false;
+            }
+        }
+        return true;
+    }
+
+    static bool LineOfSightClear(const AimVec3& from, const AimVec3& to, uintptr_t skip_player) {
+        if (!wall_check) return true;
+        auto ents_snap = cache::GetEspSnapshot();
+        const auto& ents = *ents_snap;
+        for (const auto& ent : ents) {
+            if (ent.player_address == skip_player) continue;
+            for (size_t i = 0; i < ent.primitive_count; ++i) {
+                uintptr_t p = ent.primitives[i];
+                if (!is_valid_address(p)) continue;
+                AimVec3 center{};
+                if (!AimReadRaw(p + Offsets::Primitive::Position, &center, sizeof(center))) continue;
+                AimVec3 half{};
+                AimPartHalfExtents(ent.part_names[i], half);
+                if (SegmentHitsAABB(from, to, center, half)) return false;
+            }
+        }
+        return true;
     }
 
     static void AimAtPrimitive(uintptr_t head_prim) {
@@ -398,6 +478,16 @@ namespace features {
             if (is_valid_address(locked_head)) {
                 AimVec3 test{};
                 if (AimReadRaw(locked_head + Offsets::Primitive::Position, &test, sizeof(test))) {
+                    if (wall_check) {
+                        AimVec3 cam_pos{}; float rot[9]{};
+                        if (GetCameraTransform(cam_pos, rot) &&
+                            !LineOfSightClear(cam_pos, test, locked_player)) {
+                            locked_head = 0;
+                            locked_player = 0;
+                            was_key_held = true;
+                            return;
+                        }
+                    }
                     bool do_aim = (now_aim - last_aim_update_time) >= k_aim_update_interval_ms;
                     if (do_aim) {
                         last_aim_update_time = now_aim;

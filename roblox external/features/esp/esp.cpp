@@ -174,6 +174,52 @@ namespace features {
         out = { 1, 1, 1 };
     }
 
+    // Wall check: segment-vs-AABB ray against the other players' cached parts.
+    // (An external can't call the game's raycast and we don't have the world
+    // primitives list, so this is line-of-sight through OTHER PLAYERS only.)
+    static bool SegmentHitsAABB(const Vec3& from, const Vec3& to,
+                                const Vec3& center, const Vec3& half) {
+        float org[3] = { from.x, from.y, from.z };
+        float dir[3] = { to.x - from.x, to.y - from.y, to.z - from.z };
+        float c[3]   = { center.x, center.y, center.z };
+        float h[3]   = { half.x, half.y, half.z };
+        float tmin = 0.0f, tmax = 1.0f;
+        for (int i = 0; i < 3; ++i) {
+            float e = org[i], f = dir[i], mn = c[i] - h[i], mx = c[i] + h[i];
+            if (f > -1e-6f && f < 1e-6f) {
+                if (e < mn || e > mx) return false;
+            } else {
+                float t1 = (mn - e) / f;
+                float t2 = (mx - e) / f;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) return false;
+            }
+        }
+        return true;
+    }
+
+    static bool LOSClear(const Vec3& from, const Vec3& to, uintptr_t skip_player) {
+        if (!wall_check) return true;
+        auto ents_snap = cache::GetEspSnapshot();
+        const auto& ents = *ents_snap;
+        for (const auto& ent : ents) {
+            if (ent.player_address == skip_player) continue;
+            for (size_t i = 0; i < ent.primitive_count; ++i) {
+                uintptr_t p = ent.primitives[i];
+                if (!is_valid_address(p)) continue;
+                Vec3 c{};
+                if (!ReadVec3(p + Offsets::Primitive::Position, c)) continue;
+                Vec3 size{};
+                CanonicalPartSize(ent.part_names[i], size);
+                Vec3 half = { size.x * 0.5f, size.y * 0.5f, size.z * 0.5f };
+                if (SegmentHitsAABB(from, to, c, half)) return false;
+            }
+        }
+        return true;
+    }
+
     static bool ComputeBoxForPrimitives(const cache::EspEntity& entity, const Matrix4& view, const Vec2& viewport, Box2D& out_box) {
         if (entity.primitive_count == 0) {
             out_box.valid = false;
@@ -839,6 +885,14 @@ namespace features {
 
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
 
+        Vec3 cam_pos{};
+        bool have_cam = false;
+        if (wall_check) {
+            instance cam = GetCameraInstance();
+            if (cam.is_valid() && ReadVec3(cam.address + Offsets::Camera::Position, cam_pos))
+                have_cam = true;
+        }
+
         for (const cache::EspEntity& entity : entities) {
             if (esp_render_distance > 0.0f && lp.valid) {
                 float dx = entity.root_x - lp.x;
@@ -846,6 +900,12 @@ namespace features {
                 float dz = entity.root_z - lp.z;
                 float dist = sqrtf(dx * dx + dy * dy + dz * dz);
                 if (dist > esp_render_distance) continue;
+            }
+
+            if (wall_check && have_cam &&
+                !(entity.root_x == 0.0f && entity.root_y == 0.0f && entity.root_z == 0.0f)) {
+                Vec3 root = { entity.root_x, entity.root_y, entity.root_z };
+                if (!LOSClear(cam_pos, root, entity.player_address)) continue;
             }
 
             Box2D box{};

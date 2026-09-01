@@ -18,6 +18,14 @@
 
 static int* s_waiting_key_ptr = nullptr;
 
+// window collapse state (shared by the window-sizing preamble and the title-bar
+// controls so the collapse button can actually shrink/restore the window)
+static bool   s_minimized = false;
+static ImVec2 s_restore_size(780.0f, 560.0f);
+static bool   s_size_queued = false;
+static ImVec2 s_queued_size;
+static constexpr float kTitleBarH = 48.0f;
+
 static const char* KeyName(int key) {
     if (key == 0) return "none";
     if (key == VK_LBUTTON) return "lmb";
@@ -387,13 +395,20 @@ void RenderMenu() {
     }
 
     ImGui::SetNextWindowSize(ImVec2(780.0f, 560.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(560.0f, 400.0f), ImVec2(FLT_MAX, FLT_MAX));
+    if (s_size_queued) {
+        ImGui::SetNextWindowSize(s_queued_size, ImGuiCond_Always);
+        s_size_queued = false;
+    }
+    if (s_minimized)
+        ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, kTitleBarH), ImVec2(FLT_MAX, kTitleBarH));
+    else
+        ImGui::SetNextWindowSizeConstraints(ImVec2(560.0f, 400.0f), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::Begin("roblox external", nullptr,
                  ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
     // ---- window glass card (reference: shadow -> backdrop -> gradient x2 -> outline) ----
-    {
+    if (!s_minimized) {
         ImDrawList* d = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
@@ -417,13 +432,11 @@ void RenderMenu() {
 
     // ---- custom title bar ----
     {
-        static bool s_minimized = false;
-
         ImDrawList* d = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
         float wr = ui_rounded_corners ? ui_corner_radius : 0.0f;
-        const float bar_h = 48.0f;
+        const float bar_h = kTitleBarH;
         float t = ui::AnimT();
 
         ImVec2 a(wp.x, wp.y), b(wp.x + ws.x, wp.y + bar_h);
@@ -465,12 +478,32 @@ void RenderMenu() {
             float y0 = wp.y + (bar_h - btnh) * 0.5f;
 
             ImGui::SetCursorScreenPos(ImVec2(x0, y0));
-            if (ImGui::InvisibleButton("##min", ImVec2(btnw, btnh))) s_minimized = !s_minimized;
+            if (ImGui::InvisibleButton("##min", ImVec2(btnw, btnh))) {
+                if (s_minimized) {
+                    // expand back to the size we had before collapsing
+                    s_minimized = false;
+                    s_queued_size = s_restore_size;
+                    s_size_queued = true;
+                } else {
+                    // collapse to just the title bar
+                    s_restore_size = ws;
+                    s_minimized = true;
+                    s_queued_size = ImVec2(ws.x, bar_h);
+                    s_size_queued = true;
+                }
+            }
             bool mhov = ImGui::IsItemHovered();
             d->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh),
                              mhov ? ui::Fade(ui::ColHovered(), 0.9f) : ui::Fade(ui::ColControl(), 0.7f), 9.0f);
             d->AddRect(ImVec2(x0, y0), ImVec2(x0 + btnw, y0 + btnh), ui::Fade(ui::ColOutline(), 0.12f), 9.0f, 0, 1.0f);
-            d->AddLine(ImVec2(x0 + 9, y0 + 15), ImVec2(x0 + 21, y0 + 15), ui::ColKnob(), 1.6f);
+            if (s_minimized) {
+                // restore glyph: a plus (click to expand)
+                d->AddLine(ImVec2(x0 + 15, y0 + 9), ImVec2(x0 + 15, y0 + 21), ui::ColKnob(), 1.6f);
+                d->AddLine(ImVec2(x0 + 9, y0 + 15), ImVec2(x0 + 21, y0 + 15), ui::ColKnob(), 1.6f);
+            } else {
+                // minimize glyph: a line (click to collapse)
+                d->AddLine(ImVec2(x0 + 9, y0 + 15), ImVec2(x0 + 21, y0 + 15), ui::ColKnob(), 1.6f);
+            }
 
             float x1 = x0 + btnw + gap;
             ImGui::SetCursorScreenPos(ImVec2(x1, y0));
@@ -576,6 +609,10 @@ void RenderMenu() {
             }
             ui::Slider("fov size", &fov_size, 10.0f, 500.0f);
             ui::Toggle("show fov", &show_fov);
+            ImGui::Separator();
+            ui::Toggle("team check", &team_check);
+            ui::Toggle("wall check", &wall_check);
+            if (wall_check) ImGui::TextDisabled("won't lock through another player's body");
         }
 
         if (s_page == 1) {
@@ -611,6 +648,8 @@ void RenderMenu() {
             if (tool_esp) ImGui::ColorEdit4("tool color", tool_color);
             ui::Slider("render dist", &esp_render_distance, 0.0f, 2000.0f, "%.0f");
             ui::Toggle("team check", &team_check);
+            ui::Toggle("wall check", &wall_check);
+            if (wall_check) ImGui::TextDisabled("hides players occluded by another player");
             ImGui::Separator();
             ui::Toggle("skeleton", &skeleton_esp);
             if (skeleton_esp) ImGui::ColorEdit4("skeleton color", skeleton_color);

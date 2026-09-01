@@ -124,3 +124,6 @@ inline char skybox_debug_msg[256]{};
 
 
 inline bool team_check = false;
+// line-of-sight check: aimbot won't lock / ESP won't draw targets blocked by
+// another player's body (true world-geometry walls need the primitives list)
+inline bool wall_check = false;
