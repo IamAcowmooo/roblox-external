@@ -5,8 +5,12 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <chrono>
+#include <cstdio>
 
+#include "memory.h"
+#include "globals.h"
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_win32.h"
 #include "imgui/backends/imgui_impl_dx11.h"
@@ -25,13 +29,65 @@ namespace discord_overlay
         IDXGISwapChain*       swap_chain  = nullptr;
         ID3D11RenderTargetView* rtv       = nullptr;
         D3D_FEATURE_LEVEL     feature_level{};
-        bool                  menu_open   = false;
+        bool                  menu_open   = true;   // start with the menu visible
         bool                  centered_once = false;
+        HWND                  prev_foreground = nullptr;
     };
 
     inline State g_state;
 
-    constexpr int TOGGLE_KEY = VK_INSERT;
+    // standalone overlay window bookkeeping
+    inline HINSTANCE   g_hinstance   = nullptr;
+    inline ATOM        g_class_atom  = 0;
+    inline const char* g_class_name  = "RBXOverlayWnd";
+    inline const char* g_window_name = "RBXOverlay";
+
+    // ---- system tray icon so there's a visible app entry to exit from ----
+    static const UINT WM_TRAYICON = WM_APP + 1;
+    static const UINT ID_TRAY_EXIT = 1001;
+    static const UINT ID_TRAY_TOGGLE = 1002;
+
+    // menu toggle key lives in globals (menu_toggle_keybind) so the keybinds tab
+    // can rebind it at runtime. defaults to VK_HOME.
+
+    // finds roblox's main window so we can hand input back to it
+    struct FindWndData { DWORD pid; HWND result; };
+
+    inline BOOL CALLBACK find_wnd_proc(HWND hwnd, LPARAM lparam)
+    {
+        FindWndData* d = reinterpret_cast<FindWndData*>(lparam);
+        DWORD wnd_pid = 0;
+        GetWindowThreadProcessId(hwnd, &wnd_pid);
+        if (wnd_pid == d->pid && GetWindow(hwnd, GW_OWNER) == nullptr && IsWindowVisible(hwnd))
+        {
+            d->result = hwnd;
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+    inline HWND find_roblox_window()
+    {
+        DWORD pid = (DWORD)mem::process_id.load();
+        if (!pid) return nullptr;
+        FindWndData d{ pid, nullptr };
+        EnumWindows(find_wnd_proc, reinterpret_cast<LPARAM>(&d));
+        return d.result;
+    }
+
+    // when click_through is true the overlay ignores the mouse entirely so you can
+    // keep playing. when the menu is open we drop WS_EX_TRANSPARENT so it can be used.
+    inline void set_clickthrough(bool click_through)
+    {
+        if (!g_state.window) return;
+
+        LONG_PTR ex = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
+        if (click_through) ex |= WS_EX_TRANSPARENT;
+
+        SetWindowLongPtr(g_state.window, GWL_EXSTYLE, ex);
+        SetWindowPos(g_state.window, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
 
     inline int VkToImGuiKey(int vk) {
         if (vk >= '0' && vk <= '9') return vk;
@@ -121,18 +177,33 @@ namespace discord_overlay
 
         while (true)
         {
-            if (GetAsyncKeyState(TOGGLE_KEY) & 1)
+            if (menu_toggle_keybind != 0 && (GetAsyncKeyState(menu_toggle_keybind) & 1))
             {
                 g_state.menu_open = !g_state.menu_open;
 
                 if (g_state.menu_open)
                 {
-                    SetWindowLong(g_state.window, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TOOLWINDOW);
+                    // remember whatever the user was using so we can hand focus back
+                    HWND prev = GetForegroundWindow();
+                    if (prev && prev != g_state.window)
+                        g_state.prev_foreground = prev;
+
                     SetForegroundWindow(g_state.window);
                 }
                 else
                 {
-                    SetWindowLong(g_state.window, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW);
+                    // give focus back to roblox (or whatever was focused before),
+                    // otherwise the game keeps ignoring your mouse and keyboard
+                    HWND restore = g_state.prev_foreground;
+                    if (!restore || !IsWindow(restore))
+                        restore = find_roblox_window();
+
+                    if (restore && IsWindow(restore))
+                    {
+                        SetForegroundWindow(restore);
+                        SetActiveWindow(restore);
+                    }
+                    g_state.prev_foreground = nullptr;
                 }
             }
 
@@ -153,7 +224,7 @@ namespace discord_overlay
                 io.AddKeyEvent(ImGuiMod_Shift, shift);
 
                 for (int vk = 1; vk < 256; ++vk) {
-                    if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == TOGGLE_KEY) continue;
+                    if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == menu_toggle_keybind) continue;
                     bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
                     bool was_down = s_prev_keys[vk];
                     if (down != was_down) {
@@ -179,17 +250,190 @@ namespace discord_overlay
         return 0;
     }
 
+    inline LRESULT WINAPI wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+            return true;
+
+        switch (msg)
+        {
+        case WM_SIZE:
+            if (g_state.swap_chain && wParam != SIZE_MINIMIZED)
+            {
+                if (g_state.rtv) { g_state.rtv->Release(); g_state.rtv = nullptr; g_render_target = nullptr; }
+
+                g_state.swap_chain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam),
+                                                  DXGI_FORMAT_UNKNOWN, 0);
+
+                ID3D11Texture2D* back_buffer = nullptr;
+                g_state.swap_chain->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
+                if (back_buffer)
+                {
+                    g_device->CreateRenderTargetView(back_buffer, nullptr, &g_state.rtv);
+                    g_render_target = g_state.rtv;
+                    back_buffer->Release();
+                }
+            }
+            return 0;
+
+        case WM_DESTROY:
+            g_state.window = nullptr;
+            PostQuitMessage(0);
+            return 0;
+
+        // never let the overlay steal focus by being clicked on
+        case WM_MOUSEACTIVATE:
+            return MA_NOACTIVATE;
+
+        case WM_COMMAND:
+            if (LOWORD(wParam) == ID_TRAY_EXIT) { g_request_exit = true; return 0; }
+            if (LOWORD(wParam) == ID_TRAY_TOGGLE) { g_state.menu_open = !g_state.menu_open; return 0; }
+            break;
+
+        default:
+            if (msg == WM_TRAYICON &&
+                (LOWORD(lParam) == WM_RBUTTONUP || LOWORD(lParam) == WM_LBUTTONUP))
+            {
+                POINT pt{};
+                GetCursorPos(&pt);
+                HMENU menu = CreatePopupMenu();
+                AppendMenuA(menu, MF_STRING, ID_TRAY_TOGGLE, "show / hide menu");
+                AppendMenuA(menu, MF_SEPARATOR, 0, nullptr);
+                AppendMenuA(menu, MF_STRING, ID_TRAY_EXIT, "exit");
+                SetForegroundWindow(hWnd);
+                TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, nullptr);
+                DestroyMenu(menu);
+                return 0;
+            }
+            break;
+        }
+
+        return DefWindowProcA(hWnd, msg, wParam, lParam);
+    }
+
+    // creates our own transparent click-through overlay window covering every monitor.
+    // no discord required.
+    inline void add_tray_icon()
+    {
+        NOTIFYICONDATAA nid{};
+        nid.cbSize = sizeof(nid);
+        nid.hWnd = g_state.window;
+        nid.uID = 1;
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+        nid.uCallbackMessage = WM_TRAYICON;
+        nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+        strncpy_s(nid.szTip, "roblox external - right click to exit", _TRUNCATE);
+        Shell_NotifyIconA(NIM_ADD, &nid);
+    }
+
+    inline void remove_tray_icon()
+    {
+        NOTIFYICONDATAA nid{};
+        nid.cbSize = sizeof(nid);
+        nid.hWnd = g_state.window;
+        nid.uID = 1;
+        Shell_NotifyIconA(NIM_DELETE, &nid);
+    }
+
+    // ---- taskbar window ----------------------------------------------------
+    // The overlay itself is WS_EX_TOOLWINDOW (deliberately hidden from the
+    // taskbar so it never shows as a giant transparent window). To still give
+    // the app a real taskbar/alt-tab entry we own a second, tiny app window.
+    inline HWND g_taskbar_window = nullptr;
+    inline const char* g_taskbar_class = "RBXExternalApp";
+
+    inline LRESULT WINAPI taskbar_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        switch (msg)
+        {
+        case WM_CLOSE:
+            g_request_exit = true;
+            return 0;
+        case WM_SIZE:
+            // restoring from the taskbar re-opens the menu
+            if (wParam == SIZE_RESTORED) {
+                g_state.menu_open = true;
+                ShowWindow(hWnd, SW_MINIMIZE);
+            }
+            return 0;
+        }
+        return DefWindowProcA(hWnd, msg, wParam, lParam);
+    }
+
+    inline void create_taskbar_window()
+    {
+        WNDCLASSEXA wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = taskbar_proc;
+        wc.hInstance     = g_hinstance;
+        wc.hIcon         = LoadIcon(nullptr, IDI_APPLICATION);
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        wc.lpszClassName = g_taskbar_class;
+        RegisterClassExA(&wc);
+
+        g_taskbar_window = CreateWindowExA(
+            WS_EX_APPWINDOW,
+            g_taskbar_class, "roblox external",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT, CW_USEDEFAULT, 420, 200,
+            nullptr, nullptr, g_hinstance, nullptr);
+
+        if (g_taskbar_window)
+            ShowWindow(g_taskbar_window, SW_SHOWMINNOACTIVE);
+    }
+
     inline bool create_overlay()
     {
-        g_state.window = FindWindowA("Chrome_WidgetWin_1", "Discord Overlay");
+        // match roblox's physical pixels, otherwise windows scales our window on
+        // high-dpi displays and the esp lands in the wrong place
+        SetProcessDPIAware();
+
+        g_hinstance = GetModuleHandleA(nullptr);
+
+        WNDCLASSEXA wc{};
+        wc.cbSize        = sizeof(wc);
+        wc.style         = CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc   = wnd_proc;
+        wc.hInstance     = g_hinstance;
+        wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        wc.lpszClassName = g_class_name;
+
+        g_class_atom = RegisterClassExA(&wc);
+        if (!g_class_atom)
+            return false;
+
+        // cover the primary monitor starting at 0,0 - this matches the geometry the
+        // discord overlay had, so the esp screen-space math stays correct.
+        // (if roblox lives on a second monitor, switch these to SM_XVIRTUALSCREEN /
+        //  SM_YVIRTUALSCREEN / SM_CXVIRTUALSCREEN / SM_CYVIRTUALSCREEN)
+        int vx = 0;
+        int vy = 0;
+        int vw = GetSystemMetrics(SM_CXSCREEN);
+        int vh = GetSystemMetrics(SM_CYSCREEN);
+
+        g_state.window = CreateWindowExA(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            g_class_name, g_window_name,
+            WS_POPUP,
+            vx, vy, vw, vh,
+            nullptr, nullptr, g_hinstance, nullptr);
+
         if (!g_state.window)
             return false;
 
-        SetWindowLong(g_state.window, GWL_EXSTYLE, WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW);
         SetLayeredWindowAttributes(g_state.window, RGB(0, 0, 0), 255, LWA_ALPHA);
 
-        MARGINS margin = { -1 };
+        // extend the dwm frame across the whole client area so the swapchain's
+        // alpha=0 clear actually shows through as real transparency
+        MARGINS margin = { -1, -1, -1, -1 };
         DwmExtendFrameIntoClientArea(g_state.window, &margin);
+
+        ShowWindow(g_state.window, SW_SHOWNOACTIVATE);
+        UpdateWindow(g_state.window);
+        SetWindowPos(g_state.window, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
         return true;
     }
@@ -244,6 +488,104 @@ namespace discord_overlay
         return true;
     }
 
+    // glassy red theme - translucent panels so the game shows through, red accents
+    inline void apply_theme()
+    {
+        ImGuiStyle& s = ImGui::GetStyle();
+
+        s.WindowRounding    = 0.0f;   // phetamine is flat/square
+        s.ChildRounding     = 0.0f;
+        s.FrameRounding     = 0.0f;
+        s.PopupRounding     = 0.0f;
+        s.ScrollbarRounding = 8.0f;
+        s.GrabRounding      = 6.0f;
+        s.TabRounding       = 0.0f;
+
+        s.WindowBorderSize  = 3.0f;   // thick red glow border
+        s.ChildBorderSize   = 1.0f;
+        s.PopupBorderSize   = 1.0f;
+        s.FrameBorderSize   = 1.0f;
+        s.TabBorderSize     = 0.0f;
+
+        s.WindowPadding     = ImVec2(16, 16);
+        s.FramePadding      = ImVec2(14, 8);   // wider tabs so labels aren't clipped
+        s.ItemSpacing       = ImVec2(12, 10);
+        s.ItemInnerSpacing  = ImVec2(10, 8);
+        s.CellPadding       = ImVec2(8, 6);
+        s.ScrollbarSize     = 14.0f;
+        s.GrabMinSize       = 12.0f;
+        s.WindowTitleAlign  = ImVec2(0.5f, 0.5f);
+        s.SeparatorTextBorderSize = 2.0f;
+        s.SeparatorTextPadding    = ImVec2(20, 6);
+
+        ImVec4* c = s.Colors;
+
+        const ImVec4 red        = ImVec4(0.78f, 0.08f, 0.08f, 1.00f);
+        const ImVec4 red_dim    = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
+        const ImVec4 red_soft   = ImVec4(0.78f, 0.08f, 0.08f, 0.28f);
+        const ImVec4 glass      = ImVec4(0.031f, 0.031f, 0.047f, 0.94f); // BG_MAIN 8,8,12
+        const ImVec4 glass_deep = ImVec4(0.03f, 0.03f, 0.05f, 0.90f);
+        const ImVec4 glass_soft = ImVec4(0.10f, 0.10f, 0.13f, 0.60f);
+
+        c[ImGuiCol_Text]                 = ImVec4(0.94f, 0.94f, 0.96f, 1.00f);
+        c[ImGuiCol_TextDisabled]         = ImVec4(0.45f, 0.45f, 0.50f, 1.00f);
+        c[ImGuiCol_WindowBg]             = glass;
+        c[ImGuiCol_ChildBg]              = ImVec4(0.08f, 0.08f, 0.10f, 0.45f);
+        c[ImGuiCol_PopupBg]              = glass_deep;
+        c[ImGuiCol_Border]               = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
+        c[ImGuiCol_BorderShadow]         = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+
+        c[ImGuiCol_FrameBg]              = glass_soft;
+        c[ImGuiCol_FrameBgHovered]       = red_soft;
+        c[ImGuiCol_FrameBgActive]        = red_dim;
+
+        c[ImGuiCol_TitleBg]              = glass_deep;
+        c[ImGuiCol_TitleBgActive]        = ImVec4(0.16f, 0.04f, 0.07f, 0.95f);
+        c[ImGuiCol_TitleBgCollapsed]     = ImVec4(0.05f, 0.05f, 0.07f, 0.60f);
+        c[ImGuiCol_MenuBarBg]            = glass_deep;
+
+        c[ImGuiCol_ScrollbarBg]          = ImVec4(0.03f, 0.03f, 0.05f, 0.40f);
+        c[ImGuiCol_ScrollbarGrab]        = red_soft;
+        c[ImGuiCol_ScrollbarGrabHovered] = red_dim;
+        c[ImGuiCol_ScrollbarGrabActive]  = red;
+
+        c[ImGuiCol_CheckMark]            = red;
+        c[ImGuiCol_SliderGrab]           = red_dim;
+        c[ImGuiCol_SliderGrabActive]     = red;
+
+        c[ImGuiCol_Button]               = glass_soft;
+        c[ImGuiCol_ButtonHovered]        = red_soft;
+        c[ImGuiCol_ButtonActive]         = red_dim;
+
+        c[ImGuiCol_Header]               = red_soft;
+        c[ImGuiCol_HeaderHovered]        = red_dim;
+        c[ImGuiCol_HeaderActive]         = red;
+
+        c[ImGuiCol_Separator]            = ImVec4(0.86f, 0.13f, 0.24f, 0.25f);
+        c[ImGuiCol_SeparatorHovered]     = red_dim;
+        c[ImGuiCol_SeparatorActive]      = red;
+
+        c[ImGuiCol_ResizeGrip]           = red_soft;
+        c[ImGuiCol_ResizeGripHovered]    = red_dim;
+        c[ImGuiCol_ResizeGripActive]     = red;
+
+        c[ImGuiCol_Tab]                  = ImVec4(0.10f, 0.05f, 0.07f, 0.80f);
+        c[ImGuiCol_TabHovered]           = red_dim;
+        c[ImGuiCol_TabActive]            = ImVec4(0.35f, 0.07f, 0.13f, 0.95f);
+        c[ImGuiCol_TabUnfocused]         = ImVec4(0.08f, 0.04f, 0.06f, 0.80f);
+        c[ImGuiCol_TabUnfocusedActive]   = ImVec4(0.22f, 0.05f, 0.09f, 0.90f);
+
+        c[ImGuiCol_PlotLines]            = red;
+        c[ImGuiCol_PlotLinesHovered]     = ImVec4(1.00f, 0.35f, 0.45f, 1.00f);
+        c[ImGuiCol_PlotHistogram]        = red;
+        c[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.35f, 0.45f, 1.00f);
+
+        c[ImGuiCol_TextSelectedBg]       = red_dim;
+        c[ImGuiCol_DragDropTarget]       = red;
+        c[ImGuiCol_NavHighlight]         = red;
+        c[ImGuiCol_ModalWindowDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.45f);
+    }
+
     inline bool init_imgui()
     {
         ImGui::CreateContext();
@@ -251,7 +593,34 @@ namespace discord_overlay
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-        io.Fonts->AddFontDefault();
+        // load a modern system font instead of imgui's tiny bitmap default.
+        // segoe ui ships with every supported version of windows; fall back to
+        // tahoma, then the built-in font, so this can never leave us fontless.
+        {
+            ImFontConfig cfg;
+            cfg.OversampleH = 2;
+            cfg.OversampleV = 2;
+            cfg.PixelSnapH  = true;
+
+            const char* candidates[] = {
+                "C:\\Windows\\Fonts\\segoeui.ttf",
+                "C:\\Windows\\Fonts\\tahoma.ttf",
+                "C:\\Windows\\Fonts\\arial.ttf",
+            };
+
+            ImFont* loaded = nullptr;
+            for (const char* path : candidates) {
+                // check the file exists first - AddFontFromFileTTF asserts in debug builds
+                DWORD attrs = GetFileAttributesA(path);
+                if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY))
+                    continue;
+                loaded = io.Fonts->AddFontFromFileTTF(path, 18.0f, &cfg);
+                if (loaded) break;
+            }
+            if (!loaded) io.Fonts->AddFontDefault();
+        }
+
+        apply_theme();
 
         ImGui_ImplWin32_Init(g_state.window);
         ImGui_ImplDX11_Init(g_device, g_context);
@@ -264,15 +633,17 @@ namespace discord_overlay
 
     inline void run()
     {
-        while (!create_overlay())
-            Sleep(2000);
+        if (!create_overlay()) { LogLine("failed to create overlay window"); return; }
+        if (!init_device())    { LogLine("failed to create d3d11 device"); return; }
+        if (!init_imgui())     { LogLine("failed to init imgui"); return; }
 
-        if (!init_device()) return;
-        if (!init_imgui())  return;
+        create_taskbar_window();
+        add_tray_icon();
+        LogLine("overlay ready - right click the tray icon to exit");
 
         CreateThread(nullptr, 0, input_thread, nullptr, 0, nullptr);
 
-        while (g_state.window)
+        while (g_state.window && !g_request_exit)
         {
             MSG msg{};
             while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -292,6 +663,19 @@ namespace discord_overlay
 
             ImGui::Render();
 
+            // only capture the mouse where the menu actually is. everywhere else stays
+            // click-through so roblox and your other apps keep working while it's open.
+            {
+                static bool s_click_through = true;
+                bool want_mouse = g_state.menu_open && ImGui::GetIO().WantCaptureMouse;
+                bool desired = !want_mouse;
+                if (desired != s_click_through)
+                {
+                    set_clickthrough(desired);
+                    s_click_through = desired;
+                }
+            }
+
             constexpr float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
             g_context->OMSetRenderTargets(1, &g_state.rtv, nullptr);
             g_context->ClearRenderTargetView(g_state.rtv, clear);
@@ -303,6 +687,8 @@ namespace discord_overlay
 
     inline void shutdown()
     {
+        remove_tray_icon();
+        if (g_taskbar_window) { DestroyWindow(g_taskbar_window); g_taskbar_window = nullptr; }
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
@@ -311,5 +697,8 @@ namespace discord_overlay
         if (g_state.swap_chain) g_state.swap_chain->Release();
         if (g_context)          g_context->Release();
         if (g_device)           g_device->Release();
+
+        if (g_state.window) { DestroyWindow(g_state.window); g_state.window = nullptr; }
+        if (g_class_atom)   { UnregisterClassA(g_class_name, g_hinstance); g_class_atom = 0; }
     }
 }

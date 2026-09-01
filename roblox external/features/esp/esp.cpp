@@ -12,10 +12,7 @@
 #include "cache.h"
 #include "offsets.h"
 #include "overlay.h"
-#include "../mesh_gpu/mesh_gpu.h"
-#include "../assetmesh/asset_mesh.h"
 #include "imgui/imgui.h"
-#include "../avatarmesh/avatar_mesh.h"
 #include <clipper2/clipper.h>
 
 namespace features {
@@ -137,69 +134,6 @@ namespace features {
         return ChainNone;
     }
 
-    static int DetermineR15ChainVariant(const cache::EspEntity& entity, const avatarmesh::avatar_mesh* avatar, R15ChainId chain_id) {
-        const char* anchor_name;
-        const char* upper_name;
-        const char* lower_name;
-        const char* end_name;
-        if (!GetR15ChainNames(chain_id, anchor_name, upper_name, lower_name, end_name)) return 0;
-
-        const avatarmesh::mesh_part* anchor_mesh = avatarmesh::find_part(avatar, anchor_name, true);
-        const avatarmesh::mesh_part* upper_mesh = avatarmesh::find_part(avatar, upper_name, true);
-        const avatarmesh::mesh_part* lower_mesh = avatarmesh::find_part(avatar, lower_name, true);
-        const avatarmesh::mesh_part* end_mesh = avatarmesh::find_part(avatar, end_name, true);
-        if (!anchor_mesh || !upper_mesh || !lower_mesh || !end_mesh) return 0;
-
-        int anchor_idx = FindEntityPartIndex(entity, anchor_name);
-        int upper_idx = FindEntityPartIndex(entity, upper_name);
-        int lower_idx = FindEntityPartIndex(entity, lower_name);
-        int end_idx = FindEntityPartIndex(entity, end_name);
-        if (anchor_idx < 0 || upper_idx < 0 || lower_idx < 0 || end_idx < 0) return 0;
-
-        uintptr_t anchor_prim = entity.primitives[anchor_idx];
-        uintptr_t upper_prim = entity.primitives[upper_idx];
-        uintptr_t lower_prim = entity.primitives[lower_idx];
-        uintptr_t end_prim = entity.primitives[end_idx];
-        if (!is_valid_address(anchor_prim) || !is_valid_address(upper_prim) || !is_valid_address(lower_prim) || !is_valid_address(end_prim)) return 0;
-
-        struct { float rot[9]; Vec3 pos; } anchor_rp{};
-        if (!ReadRaw(anchor_prim + Offsets::Primitive::Rotation, &anchor_rp, sizeof(anchor_rp))) return 0;
-        Vec3 upper_pos{};
-        Vec3 lower_pos{};
-        Vec3 end_pos{};
-        if (!ReadVec3(upper_prim + Offsets::Primitive::Position, upper_pos)) return 0;
-        if (!ReadVec3(lower_prim + Offsets::Primitive::Position, lower_pos)) return 0;
-        if (!ReadVec3(end_prim + Offsets::Primitive::Position, end_pos)) return 0;
-
-        Vec3 live_a = ToLocal(anchor_rp.rot, Sub(upper_pos, anchor_rp.pos));
-        Vec3 live_b = ToLocal(anchor_rp.rot, Sub(lower_pos, upper_pos));
-        Vec3 live_c = ToLocal(anchor_rp.rot, Sub(end_pos, lower_pos));
-        live_a = Normalize(live_a);
-        live_b = Normalize(live_b);
-        live_c = Normalize(live_c);
-
-        Vec3 obj_a = Normalize({ upper_mesh->center.x - anchor_mesh->center.x, upper_mesh->center.y - anchor_mesh->center.y, upper_mesh->center.z - anchor_mesh->center.z });
-        Vec3 obj_b = Normalize({ lower_mesh->center.x - upper_mesh->center.x, lower_mesh->center.y - upper_mesh->center.y, lower_mesh->center.z - upper_mesh->center.z });
-        Vec3 obj_c = Normalize({ end_mesh->center.x - lower_mesh->center.x, end_mesh->center.y - lower_mesh->center.y, end_mesh->center.z - lower_mesh->center.z });
-
-        int best_variant = 0;
-        float best_score = -1e9f;
-        for (int variant = 0; variant < 4; ++variant) {
-            float ax, ay, az, bx, by, bz, cx, cy, cz;
-            RotateYVariant(variant, obj_a.x, obj_a.y, obj_a.z, ax, ay, az);
-            RotateYVariant(variant, obj_b.x, obj_b.y, obj_b.z, bx, by, bz);
-            RotateYVariant(variant, obj_c.x, obj_c.y, obj_c.z, cx, cy, cz);
-            float score =
-                Dot(Normalize({ ax, ay, az }), live_a) * 2.0f +
-                Dot(Normalize({ bx, by, bz }), live_b) +
-                Dot(Normalize({ cx, cy, cz }), live_c);
-            if (score > best_score) {
-                best_score = score;
-                best_variant = variant;
-            }
-        }
-        return best_variant;
-    }
 
     static bool GetCamera(Matrix4& view, Vec2& viewport) {
         instance ve = read<instance>(g_base_address + Offsets::VisualEngine::Pointer);
@@ -243,20 +177,43 @@ namespace features {
             if (!ReadVec3(primitive + Offsets::Primitive::Position, pos)) continue;
             if (!ReadVec3(primitive + Offsets::Primitive::Size, size)) continue;
 
+            // A part whose size reads back as ~0 collapses its 8 corners onto the
+            // part's centre. With the feet contributing only their centre point the
+            // whole box ends up sitting slightly above the character, so fall back
+            // to a sane default extent instead.
+            if (size.x < 0.05f && size.y < 0.05f && size.z < 0.05f)
+                size = { 1.0f, 1.0f, 1.0f };
+
             float hx = size.x * 0.5f;
             float hy = size.y * 0.5f;
             float hz = size.z * 0.5f;
 
-            Vec3 corners[8] = {
-                { pos.x - hx, pos.y - hy, pos.z - hz },
-                { pos.x - hx, pos.y - hy, pos.z + hz },
-                { pos.x - hx, pos.y + hy, pos.z - hz },
-                { pos.x - hx, pos.y + hy, pos.z + hz },
-                { pos.x + hx, pos.y - hy, pos.z - hz },
-                { pos.x + hx, pos.y - hy, pos.z + hz },
-                { pos.x + hx, pos.y + hy, pos.z - hz },
-                { pos.x + hx, pos.y + hy, pos.z + hz },
+            // apply the part's 3x3 rotation matrix, otherwise rotated/tilted parts
+            // produce a box that is far too big and drifts as the player turns
+            float rot[9] = {};
+            bool have_rot = ReadRaw(primitive + Offsets::Primitive::Rotation, rot, sizeof(rot));
+
+            static const float local[8][3] = {
+                {-1,-1,-1},{-1,-1, 1},{-1, 1,-1},{-1, 1, 1},
+                { 1,-1,-1},{ 1,-1, 1},{ 1, 1,-1},{ 1, 1, 1}
             };
+
+            Vec3 corners[8];
+            for (int c = 0; c < 8; ++c) {
+                float lx = local[c][0] * hx;
+                float ly = local[c][1] * hy;
+                float lz = local[c][2] * hz;
+
+                if (have_rot) {
+                    corners[c] = {
+                        pos.x + rot[0] * lx + rot[1] * ly + rot[2] * lz,
+                        pos.y + rot[3] * lx + rot[4] * ly + rot[5] * lz,
+                        pos.z + rot[6] * lx + rot[7] * ly + rot[8] * lz
+                    };
+                } else {
+                    corners[c] = { pos.x + lx, pos.y + ly, pos.z + lz };
+                }
+            }
 
             for (int c = 0; c < 8; ++c) {
                 Vec2 pt{};
@@ -295,73 +252,7 @@ namespace features {
         return true;
     }
 
-    static void GetPFPartSize(const char* part_name, Vec3& size) {
-        if (strcmp(part_name, "UpperTorso") == 0) { size.x = 2.0f; size.y = 2.0f; size.z = 1.0f; return; }
-        if (strcmp(part_name, "Head") == 0) { size.x = 1.0f; size.y = 1.0f; size.z = 1.0f; return; }
-        size.x = 1.0f; size.y = 2.0f; size.z = 1.0f;
-    }
 
-    static bool ComputeBoxForPFEntity(const cache::EspEntity& entity, const Matrix4& view, const Vec2& viewport, Box2D& out_box) {
-        if (entity.primitive_count == 0) {
-            out_box.valid = false;
-            return false;
-        }
-        bool has_point = false;
-        float min_x = 0.0f, min_y = 0.0f, max_x = 0.0f, max_y = 0.0f;
-        static const float corners_local[8][3] = {
-            {-1,-1,-1},{1,-1,-1},{-1,1,-1},{1,1,-1},{-1,-1,1},{1,-1,1},{-1,1,1},{1,1,1}
-        };
-        for (size_t i = 0; i < entity.primitive_count; ++i) {
-            uintptr_t primitive = entity.primitives[i];
-            if (!is_valid_address(primitive)) continue;
-            Vec3 pos{};
-            if (!ReadVec3(primitive + Offsets::Primitive::Position, pos)) continue;
-            Vec3 size{};
-            GetPFPartSize(entity.part_names[i], size);
-            float rot[9] = {};
-            if (!ReadRaw(primitive + Offsets::Primitive::Rotation, rot, sizeof(rot))) continue;
-            float hx = size.x * 0.5f, hy = size.y * 0.5f, hz = size.z * 0.5f;
-            for (int c = 0; c < 8; ++c) {
-                float lx = corners_local[c][0] * hx;
-                float ly = corners_local[c][1] * hy;
-                float lz = corners_local[c][2] * hz;
-                Vec3 world = {
-                    pos.x + rot[0] * lx + rot[1] * ly + rot[2] * lz,
-                    pos.y + rot[3] * lx + rot[4] * ly + rot[5] * lz,
-                    pos.z + rot[6] * lx + rot[7] * ly + rot[8] * lz
-                };
-                Vec2 pt{};
-                if (WorldToScreen(world, pt, view, viewport)) {
-                    if (!has_point) {
-                        min_x = max_x = pt.x;
-                        min_y = max_y = pt.y;
-                        has_point = true;
-                    } else {
-                        if (pt.x < min_x) min_x = pt.x;
-                        if (pt.x > max_x) max_x = pt.x;
-                        if (pt.y < min_y) min_y = pt.y;
-                        if (pt.y > max_y) max_y = pt.y;
-                    }
-                }
-            }
-        }
-        if (!has_point) {
-            out_box.valid = false;
-            return false;
-        }
-        float w = max_x - min_x;
-        float h = max_y - min_y;
-        if (w <= 1.0f || h <= 1.0f) {
-            out_box.valid = false;
-            return false;
-        }
-        out_box.min_x = min_x;
-        out_box.min_y = min_y;
-        out_box.max_x = max_x;
-        out_box.max_y = max_y;
-        out_box.valid = true;
-        return true;
-    }
 
     static bool ReadPos(uintptr_t primitive, Vec3& out) {
         if (!is_valid_address(primitive)) return false;
@@ -395,7 +286,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& skeletons = cache::GetSkeletonEntities();
+        auto skeletons_snap = cache::GetSkeletonSnapshot();
+        const auto& skeletons = *skeletons_snap;
         if (skeletons.empty()) return;
 
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -454,7 +346,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& skeletons = cache::GetSkeletonEntities();
+        auto skeletons_snap = cache::GetSkeletonSnapshot();
+        const auto& skeletons = *skeletons_snap;
         if (skeletons.empty()) return;
 
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -475,25 +368,7 @@ namespace features {
         for (const cache::SkeletonEntity& skel : skeletons) {
             if (!skel.head || !skel.upper_torso) continue;
 
-            if (skel.is_phantom_forces) {
-                Vec2 head_scr, torso_scr;
-                if (PartToScreen(skel.head, view, viewport, head_scr) && 
-                    PartToScreen(skel.upper_torso, view, viewport, torso_scr)) {
-                    draw->AddLine(ImVec2(head_scr.x, head_scr.y), ImVec2(torso_scr.x, torso_scr.y), black, 3.0f);
-                    draw->AddLine(ImVec2(head_scr.x, head_scr.y), ImVec2(torso_scr.x, torso_scr.y), color, 1.0f);
-                }
-                
-                for (int i = 0; i < 5; ++i) {
-                    if (skel.pf_limbs[i]) {
-                        Vec2 limb_scr;
-                        if (PartToScreen(skel.pf_limbs[i], view, viewport, limb_scr)) {
-                            draw->AddLine(ImVec2(torso_scr.x, torso_scr.y), ImVec2(limb_scr.x, limb_scr.y), black, 3.0f);
-                            draw->AddLine(ImVec2(torso_scr.x, torso_scr.y), ImVec2(limb_scr.x, limb_scr.y), color, 1.0f);
-                        }
-                    }
-                }
-            }
-            else if (skel.is_r15) {
+            if (skel.is_r15) {
                 DrawBone(draw, skel.head, skel.upper_torso, view, viewport, color);
                 DrawBone(draw, skel.upper_torso, skel.lower_torso, view, viewport, color);
                 DrawBone(draw, skel.upper_torso, skel.left_upper_arm, view, viewport, color);
@@ -530,7 +405,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& entities = cache::GetEspEntities();
+        auto entities_snap = cache::GetEspSnapshot();
+        const auto& entities = *entities_snap;
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
         if (entities.empty()) return;
 
@@ -824,7 +700,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& entities = cache::GetEspEntities();
+        auto entities_snap = cache::GetEspSnapshot();
+        const auto& entities = *entities_snap;
         if (entities.empty()) return;
 
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -965,163 +842,7 @@ namespace features {
         }
     }
 
-    void RenderMeshChams() {
-        Matrix4 view{};
-        Vec2 viewport{};
-        if (!GetCamera(view, viewport)) return;
 
-        const auto& entities = cache::GetEspEntities();
-        if (entities.empty()) return;
-
-        static DWORD last_stats_print = 0;
-        DWORD now = GetTickCount();
-        if (now - last_stats_print >= 5000) {
-            last_stats_print = now;
-            assetmesh::debug_stats stats = assetmesh::get_debug_stats();
-        }
-
-        if (union_chams) {
-            ImDrawList* draw = ImGui::GetBackgroundDrawList();
-            if (!draw) return;
-
-            ImU32 fill = IM_COL32(
-                (int)(mesh_chams_color[0] * 255.0f),
-                (int)(mesh_chams_color[1] * 255.0f),
-                (int)(mesh_chams_color[2] * 255.0f),
-                (int)(mesh_chams_color[3] * 255.0f)
-            );
-
-            static ImVec2 mesh_pts[512];
-            static Clipper2Lib::Paths64 mesh_polys;
-
-            for (const cache::EspEntity& entity : entities) {
-                mesh_polys.clear();
-                mesh_polys.reserve(entity.primitive_count);
-
-                for (size_t i = 0; i < entity.primitive_count; ++i) {
-                    uint64_t asset_id = assetmesh::get_mesh_asset_id_from_part(entity.part_addresses[i]);
-                    if (!asset_id && entity.user_id != 0) {
-                        assetmesh::request_avatar_assets(entity.user_id);
-                        asset_id = assetmesh::get_mesh_asset_id_for_part(entity.user_id, entity.part_names[i], entity.is_r15);
-                        if (!asset_id) {
-                            asset_id = assetmesh::get_default_asset_for_part(entity.part_names[i], entity.is_r15);
-                        }
-                    }
-                    if (!asset_id) {
-                        uint64_t key = (static_cast<uint64_t>(entity.user_id) << 32) | static_cast<uint64_t>(i);
-                        g_logged_missing_mesh_asset.insert(key);
-                    }
-
-                    std::shared_ptr<const assetmesh::parsed_mesh> mesh;
-                    if (asset_id) {
-                        assetmesh::request_mesh(asset_id);
-                        mesh = assetmesh::get_mesh(asset_id);
-                        if (!mesh || mesh->vertices.empty()) {
-                            uint64_t key = (static_cast<uint64_t>(entity.user_id) << 32) | (static_cast<uint64_t>(i) ^ 0x80000000ull);
-                            g_logged_missing_mesh_data.insert(key);
-                            mesh.reset();
-                        }
-                    }
-
-                    uintptr_t prim_addr = entity.primitives[i];
-                    if (!is_valid_address(prim_addr)) continue;
-
-                    struct { float rot[9]; Vec3 pos; } rp{};
-                    if (!ReadRaw(prim_addr + Offsets::Primitive::Rotation, &rp, sizeof(rp))) continue;
-
-                    Vec3 sz{};
-                    if (!ReadVec3(prim_addr + Offsets::Primitive::Size, sz)) continue;
-
-                    int pt_count = 0;
-
-                    if (mesh) {
-                        const auto& b = mesh->bounds;
-                        float sx = b.size.x > 0.001f ? sz.x / b.size.x : 1.0f;
-                        float sy = b.size.y > 0.001f ? sz.y / b.size.y : 1.0f;
-                        float sz_scale = b.size.z > 0.001f ? sz.z / b.size.z : 1.0f;
-
-                        size_t step = (std::max)((size_t)1, mesh->vertices.size() / 64);
-                        for (size_t vi = 0; vi < mesh->vertices.size() && pt_count < 500; vi += step) {
-                            const auto& v = mesh->vertices[vi].position;
-                            float lx = (v.x - b.center.x) * sx;
-                            float ly = (v.y - b.center.y) * sy;
-                            float lz = (v.z - b.center.z) * sz_scale;
-                            Vec3 world{
-                                rp.rot[0] * lx + rp.rot[1] * ly + rp.rot[2] * lz + rp.pos.x,
-                                rp.rot[3] * lx + rp.rot[4] * ly + rp.rot[5] * lz + rp.pos.y,
-                                rp.rot[6] * lx + rp.rot[7] * ly + rp.rot[8] * lz + rp.pos.z
-                            };
-                            Vec2 scr;
-                            if (WorldToScreen(world, scr, view, viewport))
-                                mesh_pts[pt_count++] = { scr.x, scr.y };
-                        }
-                    } else if (entity.user_id != 0) {
-                        avatarmesh::request_avatar_mesh(entity.user_id, entity.is_r15);
-                        const avatarmesh::avatar_mesh* avatar = avatarmesh::get_avatar_mesh(entity.user_id, entity.is_r15);
-                        if (avatar) {
-                            const avatarmesh::mesh_part* part = avatarmesh::find_part(avatar, entity.part_names[i], entity.is_r15);
-                            if (part && !part->vertices.empty()) {
-                                float sx = part->size.x > 0.001f ? sz.x / part->size.x : 1.0f;
-                                float sy = part->size.y > 0.001f ? sz.y / part->size.y : 1.0f;
-                                float sz_scale = part->size.z > 0.001f ? sz.z / part->size.z : 1.0f;
-                                size_t step = (std::max)((size_t)1, part->vertices.size() / 64);
-                                for (size_t vi = 0; vi < part->vertices.size() && pt_count < 500; vi += step) {
-                                    const auto& v = part->vertices[vi].position;
-                                    float lx = (v.x - part->center.x) * sx;
-                                    float ly = (v.y - part->center.y) * sy;
-                                    float lz = (v.z - part->center.z) * sz_scale;
-                                    Vec3 world{
-                                        rp.rot[0] * lx + rp.rot[1] * ly + rp.rot[2] * lz + rp.pos.x,
-                                        rp.rot[3] * lx + rp.rot[4] * ly + rp.rot[5] * lz + rp.pos.y,
-                                        rp.rot[6] * lx + rp.rot[7] * ly + rp.rot[8] * lz + rp.pos.z
-                                    };
-                                    Vec2 scr;
-                                    if (WorldToScreen(world, scr, view, viewport))
-                                        mesh_pts[pt_count++] = { scr.x, scr.y };
-                                }
-                            }
-                        }
-                    }
-
-                    if (pt_count >= 3) {
-                        int hn = ComputeConvexHull(mesh_pts, pt_count);
-                        if (hn >= 3) {
-                            Clipper2Lib::Path64 path;
-                            path.reserve((size_t)hn);
-                            for (int h = 0; h < hn; h++)
-                                path.push_back({ (int64_t)(mesh_pts[h].x * CLIPPER_SCALE), (int64_t)(mesh_pts[h].y * CLIPPER_SCALE) });
-                            if (Clipper2Lib::Area(path) > 1.0)
-                                mesh_polys.push_back(std::move(path));
-                        }
-                    }
-                }
-
-                if (!mesh_polys.empty()) {
-                    Clipper2Lib::Paths64 merged = Clipper2Lib::Union(mesh_polys, Clipper2Lib::FillRule::Positive);
-                    ImU32 outline_col = outline_chams ? IM_COL32((int)(outline_chams_color[0] * 255.0f), (int)(outline_chams_color[1] * 255.0f), (int)(outline_chams_color[2] * 255.0f), (int)(outline_chams_color[3] * 255.0f)) : 0;
-                    for (const auto& path : merged) {
-                        if (!Clipper2Lib::IsPositive(path)) continue;
-                        DrawMergedPoly(path, draw, fill);
-                        if (outline_chams && path.size() >= 3 && path.size() <= 256) {
-                            ImVec2 ov[256];
-                            for (size_t vi = 0; vi < path.size(); vi++)
-                                ov[vi] = {(float)(path[vi].x / CLIPPER_SCALE), (float)(path[vi].y / CLIPPER_SCALE)};
-                            draw->AddPolyline(ov, (int)path.size(), outline_col, ImDrawFlags_Closed, 2.5f);
-                        }
-                    }
-                }
-            }
-        } else {
-            ID3D11Device* device = overlay::GetDevice();
-            ID3D11DeviceContext* context = overlay::GetContext();
-            if (!device || !context) return;
-            meshgpu::render(entities, view.data, viewport.x, viewport.y, device, context, mesh_chams_color);
-        }
-    }
-
-    void ShutdownMeshChams() {
-        meshgpu::shutdown();
-    }
 
     void RenderExpandedHitbox() {
         if (!render_expanded_hitbox) return;
@@ -1131,7 +852,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& entities = cache::GetEspEntities();
+        auto entities_snap = cache::GetEspSnapshot();
+        const auto& entities = *entities_snap;
         if (entities.empty()) return;
 
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -1204,7 +926,8 @@ namespace features {
         Vec2 viewport{};
         if (!GetCamera(view, viewport)) return;
 
-        const auto& entities = cache::GetEspEntities();
+        auto entities_snap = cache::GetEspSnapshot();
+        const auto& entities = *entities_snap;
         if (entities.empty()) return;
 
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -1222,11 +945,7 @@ namespace features {
             }
 
             Box2D box{};
-            if (cache::IsPhantomForces()) {
-                if (!ComputeBoxForPFEntity(entity, view, viewport, box)) continue;
-            } else {
-                if (!ComputeBoxForPrimitives(entity, view, viewport, box)) continue;
-            }
+            if (!ComputeBoxForPrimitives(entity, view, viewport, box)) continue;
             if (!box.valid) continue;
 
             float x1 = floorf(box.min_x);

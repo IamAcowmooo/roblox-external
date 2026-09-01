@@ -115,14 +115,10 @@ namespace config {
         WriteEntry(f, "hitbox_expander_value", hitbox_expander_value);
         WriteEntry(f, "esp_render_distance", esp_render_distance);
         WriteEntry(f, "chams_enabled", chams_enabled);
-        WriteEntry(f, "mesh_chams_enabled", mesh_chams_enabled);
-        WriteEntry(f, "union_chams", union_chams);
-        WriteEntry(f, "outline_chams", outline_chams);
         WriteEntry(f, "box_fill", box_fill);
         WriteEntry(f, "box_fill_gradient", box_fill_gradient);
         WriteEntry(f, "box_fill_gradient_rotate", box_fill_gradient_rotate);
         WriteEntry(f, "team_check", team_check);
-        WriteEntry(f, "esp_preview_3d", esp_preview_3d);
         WriteEntry(f, "skeleton", skeleton);
 
         // colors
@@ -135,8 +131,6 @@ namespace config {
         WriteEntry(f, "skeleton_color", skeleton_color);
         WriteEntry(f, "chinahat_color", chinahat_color);
         WriteEntry(f, "chams_color", chams_color);
-        WriteEntry(f, "mesh_chams_color", mesh_chams_color);
-        WriteEntry(f, "outline_chams_color", outline_chams_color);
         WriteEntry(f, "box_fill_top", box_fill_top);
         WriteEntry(f, "box_fill_bottom", box_fill_bottom);
         WriteEntry(f, "healthbar_color", healthbar_color);
@@ -148,27 +142,30 @@ namespace config {
         WriteEntry(f, "flight_enabled", flight_enabled);
         WriteEntry(f, "flight_keybind", flight_keybind);
         WriteEntry(f, "flight_value", flight_value);
+        WriteEntry(f, "click_teleport_enabled", click_teleport_enabled);
+        WriteEntry(f, "click_teleport_keybind", click_teleport_keybind);
+        WriteEntry(f, "click_teleport_distance", click_teleport_distance);
+        WriteEntry(f, "infinite_jump_enabled", infinite_jump_enabled);
+        WriteEntry(f, "infinite_jump_power", infinite_jump_power);
+        WriteEntry(f, "fov_changer_enabled", fov_changer_enabled);
+        WriteEntry(f, "fov_value", fov_value);
+        WriteEntry(f, "ui_transparency", ui_transparency);
+        WriteEntry(f, "ui_rounded_corners", ui_rounded_corners);
+        WriteEntry(f, "ui_corner_radius", ui_corner_radius);
+        WriteEntry(f, "ui_rainbow", ui_rainbow);
+        WriteEntry(f, "flight_hold_mode", flight_hold_mode);
+        WriteEntry(f, "inventory_checker_enabled", inventory_checker_enabled);
+        WriteEntry(f, "inventory_checker_keybind", inventory_checker_keybind);
+        WriteEntry(f, "menu_toggle_keybind", menu_toggle_keybind);
         WriteEntry(f, "noclip_enabled", noclip_enabled);
         WriteEntry(f, "noclip_keybind", noclip_keybind);
 
-        // blade ball
-        WriteEntry(f, "blade_ball_auto_parry", blade_ball_auto_parry);
-        WriteEntry(f, "blade_ball_ball_esp", blade_ball_ball_esp);
-        WriteEntry(f, "blade_ball_parry_distance", blade_ball_parry_distance);
-        WriteEntry(f, "blade_ball_parry_height", blade_ball_parry_height);
 
         // misc features
-        WriteEntry(f, "korblox_enabled", korblox_enabled);
         WriteEntry(f, "skybox_changer_enabled", skybox_changer_enabled);
         WriteEntry(f, "skybox_type", skybox_type);
-        WriteEntry(f, "rivals_skin_changer_enabled", rivals_skin_changer_enabled);
 
         // memory chams
-        WriteEntry(f, "memory_mesh_chams_enabled", memory_mesh_chams_enabled);
-        WriteEntry(f, "memory_union_chams", memory_union_chams);
-        WriteEntry(f, "memory_outline_chams", memory_outline_chams);
-        WriteEntry(f, "memory_mesh_chams_color", memory_mesh_chams_color);
-        WriteEntry(f, "memory_outline_chams_color", memory_outline_chams_color);
 
         f.close();
         return true;
@@ -213,14 +210,10 @@ namespace config {
             if (ReadLine(line, "hitbox_expander_value", hitbox_expander_value)) continue;
             if (ReadLine(line, "esp_render_distance", esp_render_distance)) continue;
             if (ReadLine(line, "chams_enabled", chams_enabled)) continue;
-            if (ReadLine(line, "mesh_chams_enabled", mesh_chams_enabled)) continue;
-            if (ReadLine(line, "union_chams", union_chams)) continue;
-            if (ReadLine(line, "outline_chams", outline_chams)) continue;
             if (ReadLine(line, "box_fill", box_fill)) continue;
             if (ReadLine(line, "box_fill_gradient", box_fill_gradient)) continue;
             if (ReadLine(line, "box_fill_gradient_rotate", box_fill_gradient_rotate)) continue;
             if (ReadLine(line, "team_check", team_check)) continue;
-            if (ReadLine(line, "esp_preview_3d", esp_preview_3d)) continue;
             if (ReadLine(line, "skeleton", skeleton)) continue;
 
             // colors
@@ -233,8 +226,6 @@ namespace config {
             if (ReadLine(line, "skeleton_color", skeleton_color)) continue;
             if (ReadLine(line, "chinahat_color", chinahat_color)) continue;
             if (ReadLine(line, "chams_color", chams_color)) continue;
-            if (ReadLine(line, "mesh_chams_color", mesh_chams_color)) continue;
-            if (ReadLine(line, "outline_chams_color", outline_chams_color)) continue;
             if (ReadLine(line, "box_fill_top", box_fill_top)) continue;
             if (ReadLine(line, "box_fill_bottom", box_fill_bottom)) continue;
             if (ReadLine(line, "healthbar_color", healthbar_color)) continue;
@@ -246,27 +237,30 @@ namespace config {
             if (ReadLine(line, "flight_enabled", flight_enabled)) continue;
             if (ReadLine(line, "flight_keybind", flight_keybind)) continue;
             if (ReadLine(line, "flight_value", flight_value)) continue;
+            if (ReadLine(line, "click_teleport_enabled", click_teleport_enabled)) continue;
+            if (ReadLine(line, "click_teleport_keybind", click_teleport_keybind)) continue;
+            if (ReadLine(line, "click_teleport_distance", click_teleport_distance)) continue;
+            if (ReadLine(line, "infinite_jump_enabled", infinite_jump_enabled)) continue;
+            if (ReadLine(line, "infinite_jump_power", infinite_jump_power)) continue;
+            if (ReadLine(line, "fov_changer_enabled", fov_changer_enabled)) continue;
+            if (ReadLine(line, "fov_value", fov_value)) continue;
+            if (ReadLine(line, "ui_transparency", ui_transparency)) continue;
+            if (ReadLine(line, "ui_rounded_corners", ui_rounded_corners)) continue;
+            if (ReadLine(line, "ui_corner_radius", ui_corner_radius)) continue;
+            if (ReadLine(line, "ui_rainbow", ui_rainbow)) continue;
+            if (ReadLine(line, "flight_hold_mode", flight_hold_mode)) continue;
+            if (ReadLine(line, "inventory_checker_enabled", inventory_checker_enabled)) continue;
+            if (ReadLine(line, "inventory_checker_keybind", inventory_checker_keybind)) continue;
+            if (ReadLine(line, "menu_toggle_keybind", menu_toggle_keybind)) continue;
             if (ReadLine(line, "noclip_enabled", noclip_enabled)) continue;
             if (ReadLine(line, "noclip_keybind", noclip_keybind)) continue;
 
-            // blade ball
-            if (ReadLine(line, "blade_ball_auto_parry", blade_ball_auto_parry)) continue;
-            if (ReadLine(line, "blade_ball_ball_esp", blade_ball_ball_esp)) continue;
-            if (ReadLine(line, "blade_ball_parry_distance", blade_ball_parry_distance)) continue;
-            if (ReadLine(line, "blade_ball_parry_height", blade_ball_parry_height)) continue;
 
             // misc features
-            if (ReadLine(line, "korblox_enabled", korblox_enabled)) continue;
             if (ReadLine(line, "skybox_changer_enabled", skybox_changer_enabled)) continue;
             if (ReadLine(line, "skybox_type", skybox_type)) continue;
-            if (ReadLine(line, "rivals_skin_changer_enabled", rivals_skin_changer_enabled)) continue;
 
             // memory chams
-            if (ReadLine(line, "memory_mesh_chams_enabled", memory_mesh_chams_enabled)) continue;
-            if (ReadLine(line, "memory_union_chams", memory_union_chams)) continue;
-            if (ReadLine(line, "memory_outline_chams", memory_outline_chams)) continue;
-            if (ReadLine(line, "memory_mesh_chams_color", memory_mesh_chams_color)) continue;
-            if (ReadLine(line, "memory_outline_chams_color", memory_outline_chams_color)) continue;
         }
 
         f.close();

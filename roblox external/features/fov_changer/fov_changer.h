@@ -1,5 +1,5 @@
 #pragma once
 
 namespace features {
-    void RunRivalsSkinChanger();
+    void RunFovChanger();
 }

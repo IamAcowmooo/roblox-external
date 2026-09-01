@@ -1,5 +1,32 @@
 #pragma once
 #include <cstdint>
+#include <cstdarg>
+#include <cstdio>
+#include <deque>
+#include <mutex>
+#include <string>
+
+// ---- in-gui log (replaces the old console window) ----
+inline std::mutex g_log_mutex;
+inline std::deque<std::string> g_log_lines;
+
+inline void LogLine(const char* fmt, ...) {
+    char buf[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    g_log_lines.emplace_back(buf);
+    while (g_log_lines.size() > 200) g_log_lines.pop_front();
+}
+
+// set by the menu's X button / tray "exit" so the app can shut down cleanly
+inline bool g_request_exit = false;
+
+// menu toggle key - rebindable from the keybinds tab (VK_HOME by default)
+inline int menu_toggle_keybind = 0x24;
 
 inline bool aimbot_enabled = false;
 inline int aimbot_aim_type = 1;
@@ -31,9 +58,6 @@ inline bool hitbox_expander_enabled = false;
 inline float hitbox_expander_value = 10.0f;
 inline float esp_render_distance = 0.0f;
 inline bool chams_enabled = false;
-inline bool mesh_chams_enabled = false;
-inline bool union_chams = true;
-inline bool outline_chams = false;
 
 inline bool box_fill = false;
 inline bool box_fill_gradient = false;
@@ -50,8 +74,6 @@ inline float tool_color[4] = { 0.9f, 0.9f, 0.5f, 1.0f };
 inline float skeleton_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 inline float chinahat_color[4] = { 0.0f, 0.8f, 1.0f, 1.0f };
 inline float chams_color[4] = { 1.0f, 0.0f, 0.0f, 0.6f };
-inline float mesh_chams_color[4] = { 0.0f, 1.0f, 0.0f, 0.6f };
-inline float outline_chams_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 inline float box_fill_top[4] = { 0.0f, 0.0f, 0.0f, 0.4f };
 inline float box_fill_bottom[4] = { 0.5f, 0.0f, 0.5f, 0.4f };
 inline float healthbar_color[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
@@ -62,31 +84,40 @@ inline float walkspeed_value = 30.0f;
 
 inline bool flight_enabled = false;
 inline int flight_keybind = 0;
-inline float flight_value = 50.0f;
+inline float flight_value = 70.0f;
+inline bool flight_hold_mode = false;   // false = toggle (like the lua script)
+
+inline bool fov_changer_enabled = false;
+inline float fov_value = 70.0f;
+
+// ---- ui customisation (ui page) ----
+inline float ui_transparency = 6.0f;
+inline bool  ui_rounded_corners = false;
+inline float ui_corner_radius = 0.0f;
+inline bool  ui_rainbow = false;
+inline float ui_accent_color[3] = { 0.78f, 0.08f, 0.08f };
+
+inline bool infinite_jump_enabled = false;
+inline float infinite_jump_power = 50.0f;
+
+inline bool inventory_checker_enabled = false;
+inline int inventory_checker_keybind = 0;
+
+inline bool click_teleport_enabled = false;
+inline int click_teleport_keybind = 0;
+inline float click_teleport_distance = 30.0f;
 
 inline bool noclip_enabled = false;
 inline int noclip_keybind = 0;
 
-inline bool blade_ball_auto_parry = false;
-inline bool blade_ball_ball_esp = false;
-inline float blade_ball_parry_distance = 12.0f;
-inline float blade_ball_parry_height = 6.0f;
 
-inline bool korblox_enabled = false;
 
 inline bool skybox_changer_enabled = false;
 inline int skybox_type = 0;
 inline char skybox_debug_msg[256]{};
 
-inline bool rivals_skin_changer_enabled = false;
 
-inline bool memory_mesh_chams_enabled = false;
-inline float memory_mesh_chams_color[4] = { 1.0f, 0.0f, 0.0f, 0.6f };
-inline bool memory_union_chams = true;
-inline bool memory_outline_chams = false;
-inline float memory_outline_chams_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-inline bool esp_preview_3d = false;
 inline bool skeleton = false;
 inline float menu_alpha = 1.0f;
 
@@ -142,7 +173,6 @@ inline bool show_box = true;
 
 inline bool show_chams = true;
 
-inline bool show_mesh_chams = true;
 
 inline bool show_chinahat = true;
 

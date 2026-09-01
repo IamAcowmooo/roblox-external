@@ -76,15 +76,16 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -95,15 +96,26 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -112,7 +124,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -120,7 +132,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -131,15 +143,23 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Full</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <OmitFramePointers>true</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)Clipper2\CPP\Clipper2Lib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;dwmapi.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -156,13 +176,12 @@
     <ClCompile Include="features\flight\flight.cpp" />
     <ClCompile Include="features\noclip\noclip.cpp" />
     <ClCompile Include="features\walkspeed\walkspeed.cpp" />
-    <ClCompile Include="features\blade_ball\blade_ball.cpp" />
-    <ClCompile Include="features\rage\rage.cpp" />
+    <ClCompile Include="features\click_teleport\click_teleport.cpp" />
+    <ClCompile Include="features\infinite_jump\infinite_jump.cpp" />
+    <ClCompile Include="features\fov_changer\fov_changer.cpp" />
+    <ClCompile Include="features\inventory_checker\inventory_checker.cpp" />
     <ClCompile Include="features\skybox_changer\skybox_changer.cpp" />
-    <ClCompile Include="features\rivals_skin_changer\rivals_skin_changer.cpp" />
     <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp" />
-    <ClCompile Include="features\memorymeshchams\memorymeshchams.cpp" />
-    <ClCompile Include="features\esp_preview\esp_preview.cpp" />
     <ClCompile Include="features\config\config.cpp" />
     <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.engine.cpp" />
     <ClCompile Include="Clipper2\CPP\Clipper2Lib\src\clipper.offset.cpp" />
@@ -191,17 +210,13 @@
     <ClInclude Include="features\flight\flight.h" />
     <ClInclude Include="features\noclip\noclip.h" />
     <ClInclude Include="features\walkspeed\walkspeed.h" />
-    <ClInclude Include="features\blade_ball\blade_ball.h" />
-    <ClInclude Include="features\rage\rage.h" />
+    <ClInclude Include="features\click_teleport\click_teleport.h" />
+    <ClInclude Include="features\infinite_jump\infinite_jump.h" />
+    <ClInclude Include="features\fov_changer\fov_changer.h" />
+    <ClInclude Include="features\inventory_checker\inventory_checker.h" />
     <ClInclude Include="features\skybox_changer\skybox_changer.h" />
-    <ClInclude Include="features\rivals_skin_changer\rivals_skin_changer.h" />
     <ClInclude Include="features\hitbox_expander\hitbox_expander.h" />
-    <ClInclude Include="features\memorymeshchams\memorymeshchams.h" />
-    <ClInclude Include="features\esp_preview\esp_preview.h" />
     <ClInclude Include="features\config\config.h" />
-    <ClInclude Include="features\mesh_gpu\mesh_gpu.h" />
-    <ClInclude Include="features\assetmesh\asset_mesh.h" />
-    <ClInclude Include="features\avatarmesh\avatar_mesh.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

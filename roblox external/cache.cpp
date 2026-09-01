@@ -6,15 +6,17 @@
 #include <Windows.h>
 #include <algorithm>
 #include <cstring>
+#include <memory>
 
 struct vec3_t { float x, y, z; };
 
 namespace cache {
     static std::mutex s_mutex;
     static std::vector<EspEntity> s_entities;
+    static EspSnapshot s_entity_snapshot;
+    static SkelSnapshot s_skel_snapshot;
     static std::vector<SkeletonEntity> s_skeletons;
     static LocalPlayerData s_local{};
-    static bool s_phf = false;
     static bool s_running = false;
     static HANDLE s_thread = nullptr;
 
@@ -50,10 +52,9 @@ namespace cache {
         return false;
     }
 
-    static bool build_skel(instance ch, SkeletonEntity& s, bool phf) {
+    static bool build_skel(instance ch, SkeletonEntity& s) {
         if (!ch.is_valid()) return false;
         s.is_r15 = is_r15(ch);
-        s.is_phantom_forces = phf;
         find_part(ch, "Head", s.head);
         find_part(ch, "UpperTorso", s.upper_torso);
         find_part(ch, "LowerTorso", s.lower_torso);
@@ -70,10 +71,6 @@ namespace cache {
             find_part(ch, "LeftLowerLeg", s.left_lower_leg);
             find_part(ch, "RightUpperLeg", s.right_upper_leg);
             find_part(ch, "RightLowerLeg", s.right_lower_leg);
-        }
-        if (phf) {
-            const char* pf[] = { "RightUpperArm", "LeftUpperArm", "RightUpperLeg", "LeftUpperLeg", "Head" };
-            for (int i = 0; i < 5; ++i) find_part(ch, pf[i], s.pf_limbs[i]);
         }
         return s.head != 0 || s.upper_torso != 0;
     }
@@ -124,26 +121,29 @@ namespace cache {
             e.user_id = read<uint32_t>(p.address + Offsets::Player::UserId);
             e.team_address = get_player_team(p);
 
-            for (auto& c : ch.get_children()) {
+            // fetch the child list ONCE and reuse it for humanoid, tool and parts
+            // (this used to walk the same list three times per player)
+            std::vector<instance> ch_children = ch.get_children();
+
+            bool found_humanoid = false;
+            bool found_tool = false;
+            for (auto& c : ch_children) {
                 if (!c.is_valid()) continue;
-                if (c.get_class_name() == "Humanoid") {
+                if (found_humanoid && found_tool) break;
+                auto cn = c.get_class_name();
+                if (!found_humanoid && cn == "Humanoid") {
                     e.health = read<float>(c.address + Offsets::Humanoid::Health);
                     e.max_health = read<float>(c.address + Offsets::Humanoid::MaxHealth);
-                    break;
-                }
-            }
-            for (auto& c : ch.get_children()) {
-                if (!c.is_valid()) continue;
-                auto cn = c.get_class_name();
-                if (cn == "Tool" || cn == "BackpackItem") {
+                    found_humanoid = true;
+                } else if (!found_tool && (cn == "Tool" || cn == "BackpackItem")) {
                     scpy(e.tool_name, c.get_name().c_str(), sizeof(e.tool_name));
-                    break;
+                    found_tool = true;
                 }
             }
             e.is_r15 = is_r15(ch);
             e.character_address = ch.address;
 
-            for (auto& pt : ch.get_children()) {
+            for (auto& pt : ch_children) {
                 if (!pt.is_valid() || e.primitive_count >= 64) continue;
                 auto pn = pt.get_name();
                 if (!is_body_part(pn.c_str())) continue;
@@ -190,7 +190,6 @@ namespace cache {
             local_team = get_player_team(local);
         }
 
-        bool phf = IsPhantomForces();
         for (auto& p : plrs.get_children()) {
             if (!p.is_valid()) continue;
             if (local.is_valid() && p.address == local.address) continue;
@@ -199,7 +198,7 @@ namespace cache {
             SkeletonEntity s{};
             s.player_address = p.address;
             s.team_address = get_player_team(p);
-            if (build_skel(ch, s, phf)) result.push_back(s);
+            if (build_skel(ch, s)) result.push_back(s);
         }
 
         if (team_check && local_team != 0) {
@@ -226,7 +225,9 @@ namespace cache {
         instance ch = local.model_instance();
         if (!ch.is_valid()) return lp;
         lp.valid = true;
-        for (auto& pt : ch.get_children()) {
+        // single pass over the character's children for both HRP and Humanoid
+        std::vector<instance> parts = ch.get_children();
+        for (auto& pt : parts) {
             if (!pt.is_valid()) continue;
             if (pt.get_name() == "HumanoidRootPart") {
                 lp.hrp_primitive = get_prim(pt);
@@ -239,9 +240,27 @@ namespace cache {
                 lp.x = pos.x; lp.y = pos.y; lp.z = pos.z;
             }
         }
-        for (auto& c : ch.get_children()) {
+        for (auto& c : parts) {
             if (!c.is_valid()) continue;
             if (c.get_class_name() == "Humanoid") { lp.humanoid_address = c.address; break; }
+        }
+
+        // Prefer resolving the root part straight off the humanoid instead of by
+        // name. Humanoid::HumanoidRootPart is a direct pointer, so this works even
+        // if a name lookup fails - flight / infinite jump / teleport all depend on
+        // this pointer being valid.
+        if (is_valid_address(lp.humanoid_address)) {
+            uintptr_t hrp_part = read<uintptr_t>(lp.humanoid_address + Offsets::Humanoid::HumanoidRootPart);
+            if (is_valid_address(hrp_part)) {
+                uintptr_t prim = read<uintptr_t>(hrp_part + Offsets::BasePart::Primitive);
+                if (is_valid_address(prim)) {
+                    lp.hrp_primitive = prim;
+                    vec3_t pos{};
+                    if (read_raw(prim + Offsets::Primitive::Position, &pos, sizeof(pos))) {
+                        lp.x = pos.x; lp.y = pos.y; lp.z = pos.z;
+                    }
+                }
+            }
         }
         return lp;
     }
@@ -252,10 +271,12 @@ namespace cache {
             auto new_skeletons = fetch_skeletons();
             auto new_local = fetch_local();
 
+            auto ents = std::make_shared<const std::vector<EspEntity>>(std::move(new_entities));
+            auto skel = std::make_shared<const std::vector<SkeletonEntity>>(std::move(new_skeletons));
             {
                 std::lock_guard<std::mutex> lock(s_mutex);
-                s_entities = std::move(new_entities);
-                s_skeletons = std::move(new_skeletons);
+                s_entity_snapshot = ents;
+                s_skel_snapshot = skel;
                 s_local = new_local;
             }
             Sleep(16);
@@ -273,25 +294,24 @@ namespace cache {
         if (s_thread) { WaitForSingleObject(s_thread, 2000); CloseHandle(s_thread); s_thread = nullptr; }
     }
 
-    std::vector<EspEntity> GetEspEntities() {
+    EspSnapshot GetEspSnapshot() {
         std::lock_guard<std::mutex> lock(s_mutex);
-        return s_entities;
+        if (!s_entity_snapshot) s_entity_snapshot = std::make_shared<const std::vector<EspEntity>>();
+        return s_entity_snapshot;
     }
 
-    std::vector<SkeletonEntity> GetSkeletonEntities() {
+    SkelSnapshot GetSkeletonSnapshot() {
         std::lock_guard<std::mutex> lock(s_mutex);
-        return s_skeletons;
+        if (!s_skel_snapshot) s_skel_snapshot = std::make_shared<const std::vector<SkeletonEntity>>();
+        return s_skel_snapshot;
     }
+
+    std::vector<EspEntity> GetEspEntities() { return *GetEspSnapshot(); }
+    std::vector<SkeletonEntity> GetSkeletonEntities() { return *GetSkeletonSnapshot(); }
 
     LocalPlayerData GetLocalPlayer() {
         std::lock_guard<std::mutex> lock(s_mutex);
         return s_local;
     }
 
-    bool IsPhantomForces() {
-        if (!g_base_address) return false;
-        instance dm = game::ReadDatamodel(g_base_address);
-        if (!dm.is_valid()) return false;
-        return game::GetGameName(g_base_address).find("Phantom") != std::string::npos;
-    }
 }
