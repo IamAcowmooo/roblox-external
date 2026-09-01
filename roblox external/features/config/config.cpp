@@ -94,6 +94,8 @@ namespace config {
         WriteEntry(f, "prediction_y", prediction_y);
         WriteEntry(f, "smoothing_x", smoothing_x);
         WriteEntry(f, "smoothing_y", smoothing_y);
+        WriteEntry(f, "humanizer_enabled", humanizer_enabled);
+        WriteEntry(f, "humanizer_strength", humanizer_strength);
         WriteEntry(f, "fov_size", fov_size);
         WriteEntry(f, "show_fov", show_fov);
 
@@ -119,7 +121,7 @@ namespace config {
         WriteEntry(f, "box_fill_gradient", box_fill_gradient);
         WriteEntry(f, "box_fill_gradient_rotate", box_fill_gradient_rotate);
         WriteEntry(f, "team_check", team_check);
-        WriteEntry(f, "skeleton", skeleton);
+        WriteEntry(f, "wall_check", wall_check);
 
         // colors
         WriteEntry(f, "box_esp_color", box_esp_color);
@@ -190,6 +192,8 @@ namespace config {
             if (ReadLine(line, "prediction_y", prediction_y)) continue;
             if (ReadLine(line, "smoothing_x", smoothing_x)) continue;
             if (ReadLine(line, "smoothing_y", smoothing_y)) continue;
+            if (ReadLine(line, "humanizer_enabled", humanizer_enabled)) continue;
+            if (ReadLine(line, "humanizer_strength", humanizer_strength)) continue;
             if (ReadLine(line, "fov_size", fov_size)) continue;
             if (ReadLine(line, "show_fov", show_fov)) continue;
 
@@ -214,7 +218,7 @@ namespace config {
             if (ReadLine(line, "box_fill_gradient", box_fill_gradient)) continue;
             if (ReadLine(line, "box_fill_gradient_rotate", box_fill_gradient_rotate)) continue;
             if (ReadLine(line, "team_check", team_check)) continue;
-            if (ReadLine(line, "skeleton", skeleton)) continue;
+            if (ReadLine(line, "wall_check", wall_check)) continue;
 
             // colors
             if (ReadLine(line, "box_esp_color", box_esp_color)) continue;

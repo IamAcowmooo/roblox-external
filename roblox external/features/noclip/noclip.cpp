@@ -44,7 +44,8 @@ namespace features {
             return;
         }
 
-        bool key_held = noclip_keybind > 0 && (GetAsyncKeyState(noclip_keybind) & 0x8000) != 0;
+        // no keybind set -> noclip whenever enabled; otherwise hold-to-use
+        bool key_held = (noclip_keybind == 0) || ((GetAsyncKeyState(noclip_keybind) & 0x8000) != 0);
 
         if (!key_held) {
             RestoreCollision();

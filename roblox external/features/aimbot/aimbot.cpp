@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cmath>
 #include <cfloat>
+#include <cstdlib>
+#include <cstring>
 #include "aimbot.h"
 #include "globals.h"
 #include "memory.h"
@@ -99,6 +101,10 @@ namespace features {
     static constexpr DWORD k_target_search_interval_ms = 100;
     static constexpr DWORD k_aim_update_interval_ms = 8;
 
+    // wall-check helper is defined below FindPartForPlayer(), but target search
+    // needs to call it, so declare it here first.
+    static bool LineOfSightClear(const AimVec3& from, const AimVec3& to, uintptr_t skip_player);
+
     static uintptr_t GetPartFromSkeleton(const cache::SkeletonEntity& skel, int part_index) {
         switch (part_index) {
         case 0: return skel.head;
@@ -116,6 +122,13 @@ namespace features {
         float best_dist_sq = fov_size * fov_size;
         bool found = false;
 
+        AimVec3 cam_pos{};
+        bool have_cam = false;
+        if (wall_check) {
+            float rot[9]{};
+            have_cam = GetCameraTransform(cam_pos, rot);
+        }
+
         auto skeletons_snap = cache::GetSkeletonSnapshot();
         const auto& skeletons = *skeletons_snap;
         for (const auto& skel : skeletons) {
@@ -125,6 +138,8 @@ namespace features {
 
             AimVec3 part_pos{};
             if (!AimReadRaw(part + Offsets::Primitive::Position, &part_pos, sizeof(part_pos))) continue;
+
+            if (wall_check && have_cam && !LineOfSightClear(cam_pos, part_pos, skel.player_address)) continue;
 
             AimVec2 screen_pos{};
             if (!AimWorldToScreen(part_pos, screen_pos, view, viewport)) continue;
@@ -149,6 +164,8 @@ namespace features {
                 if (entity.primitive_count == 0) continue;
 
                 AimVec3 root_pos = { entity.root_x, entity.root_y, entity.root_z };
+                if (wall_check && have_cam && !LineOfSightClear(cam_pos, root_pos, entity.player_address)) continue;
+
                 AimVec2 screen_pos{};
                 if (!AimWorldToScreen(root_pos, screen_pos, view, viewport)) continue;
 
@@ -180,6 +197,74 @@ namespace features {
         return 0;
     }
 
+    // humanizer helpers (defined just before RunAimbot) — declared here so the
+    // aim functions below can call them
+    static void  HumanizerJitter(AimVec3& target);
+    static float HumanizerProgress();
+
+    // ---------------------------------------------------------------------
+    // Wall check (line-of-sight). An external can't call the game's raycast and
+    // we don't have the world primitives list offset, so this raycasts against
+    // the OTHER players' cached body parts: if a player is standing between the
+    // camera and the target, the target is treated as blocked.
+    // ---------------------------------------------------------------------
+    static void AimPartHalfExtents(const char* name, AimVec3& half) {
+        if (!name) { half = { 1.0f, 1.0f, 1.0f }; return; }
+        if (!strcmp(name, "Head"))                              { half = { 1.0f, 0.5f, 0.5f }; return; }
+        if (!strcmp(name, "HumanoidRootPart"))                  { half = { 1.0f, 1.0f, 0.5f }; return; }
+        if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { half = { 1.0f, 1.0f, 0.5f }; return; }
+        if (!strcmp(name, "LowerTorso"))                        { half = { 1.0f, 0.5f, 0.5f }; return; }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
+            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
+            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm") ||
+            !strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
+            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
+            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { half = { 0.5f, 1.0f, 0.5f }; return; }
+        half = { 0.5f, 0.5f, 0.5f };
+    }
+
+    static bool SegmentHitsAABB(const AimVec3& from, const AimVec3& to,
+                                const AimVec3& center, const AimVec3& half) {
+        float org[3] = { from.x, from.y, from.z };
+        float dir[3] = { to.x - from.x, to.y - from.y, to.z - from.z };
+        float c[3]   = { center.x, center.y, center.z };
+        float h[3]   = { half.x, half.y, half.z };
+        float tmin = 0.0f, tmax = 1.0f;
+        for (int i = 0; i < 3; ++i) {
+            float e = org[i], f = dir[i], mn = c[i] - h[i], mx = c[i] + h[i];
+            if (f > -1e-6f && f < 1e-6f) {
+                if (e < mn || e > mx) return false;
+            } else {
+                float t1 = (mn - e) / f;
+                float t2 = (mx - e) / f;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) return false;
+            }
+        }
+        return true;
+    }
+
+    static bool LineOfSightClear(const AimVec3& from, const AimVec3& to, uintptr_t skip_player) {
+        if (!wall_check) return true;
+        auto ents_snap = cache::GetEspSnapshot();
+        const auto& ents = *ents_snap;
+        for (const auto& ent : ents) {
+            if (ent.player_address == skip_player) continue;
+            for (size_t i = 0; i < ent.primitive_count; ++i) {
+                uintptr_t p = ent.primitives[i];
+                if (!is_valid_address(p)) continue;
+                AimVec3 center{};
+                if (!AimReadRaw(p + Offsets::Primitive::Position, &center, sizeof(center))) continue;
+                AimVec3 half{};
+                AimPartHalfExtents(ent.part_names[i], half);
+                if (SegmentHitsAABB(from, to, center, half)) return false;
+            }
+        }
+        return true;
+    }
+
     static void AimAtPrimitive(uintptr_t head_prim) {
         AimVec3 cam_pos{};
         float cam_rot[9]{};
@@ -197,11 +282,14 @@ namespace features {
             }
         }
 
+        HumanizerJitter(target_pos);
+
         float target_rot[9]{};
         ComputeLookAt(cam_pos, target_pos, target_rot);
 
-        float factor_x = 1.0f / smoothing_x;
-        float factor_y = 1.0f / smoothing_y;
+        float progress = HumanizerProgress();
+        float factor_x = progress / smoothing_x;
+        float factor_y = progress / smoothing_y;
         if (factor_x > 1.0f) factor_x = 1.0f;
         if (factor_y > 1.0f) factor_y = 1.0f;
 
@@ -233,6 +321,8 @@ namespace features {
             }
         }
 
+        HumanizerJitter(target_pos);
+
         AimVec2 target_screen{};
         if (!AimWorldToScreen(target_pos, target_screen, view, viewport)) return;
 
@@ -255,8 +345,9 @@ namespace features {
         float dx = target_screen.x - (float)cur.x;
         float dy = target_screen.y - (float)cur.y;
 
-        float factor_x = 1.0f / smoothing_x;
-        float factor_y = 1.0f / smoothing_y;
+        float progress = HumanizerProgress();
+        float factor_x = progress / smoothing_x;
+        float factor_y = progress / smoothing_y;
         if (factor_x > 1.0f) factor_x = 1.0f;
         if (factor_y > 1.0f) factor_y = 1.0f;
 
@@ -279,15 +370,60 @@ namespace features {
         SendInput(1, &input, sizeof(INPUT));
     }
 
+    // ---------------------------------------------------------------------
+    // Humanizer: makes the aim look human instead of instant.
+    //   - reaction delay after a target is (re)acquired (nothing moves at first)
+    //   - eased acceleration into the aim (slow -> fast -> settle)
+    //   - small decaying jitter so the crosshair never sits perfectly still
+    // Strength scales the reaction time and jitter; off = the old instant aim.
+    // ---------------------------------------------------------------------
+    static uintptr_t s_hum_target      = 0;
+    static DWORD     s_hum_acquire_ms  = 0;
+    static DWORD     s_hum_reaction_ms = 0;
+    static float     s_hum_jitter_x = 0.0f;
+    static float     s_hum_jitter_y = 0.0f;
+
+    static void HumanizerOnTarget(uintptr_t target) {
+        if (target == s_hum_target) return;
+        s_hum_target = target;
+        s_hum_acquire_ms = GetTickCount();
+        // reaction time grows with strength (a "more human" setting is slower to react)
+        float strength = humanizer_enabled ? humanizer_strength : 0.0f;
+        s_hum_reaction_ms = 60 + (DWORD)((rand() % 160) * (0.4f + 0.6f * strength));
+        s_hum_jitter_x = ((rand() % 100) / 50.0f - 1.0f) * 0.5f * strength;
+        s_hum_jitter_y = ((rand() % 100) / 50.0f - 1.0f) * 0.5f * strength;
+    }
+
+    // 0 = still reacting (don't move), 1 = full speed. Eases in over ~220ms.
+    static float HumanizerProgress() {
+        if (!humanizer_enabled) return 1.0f;
+        DWORD now = GetTickCount();
+        DWORD elapsed = (now >= s_hum_acquire_ms) ? (now - s_hum_acquire_ms) : 0;
+        if (elapsed < s_hum_reaction_ms) return 0.0f;
+        float t = (float)(elapsed - s_hum_reaction_ms) / 220.0f;
+        if (t > 1.0f) t = 1.0f;
+        float e = t * t * (3.0f - 2.0f * t);      // smoothstep
+        return 0.25f + 0.75f * e;                  // keep a floor so it always tracks
+    }
+
+    static void HumanizerJitter(AimVec3& target) {
+        if (!humanizer_enabled) return;
+        target.x += s_hum_jitter_x;
+        target.y += s_hum_jitter_y;
+        s_hum_jitter_x *= 0.86f;   // decay the wobble so it settles
+        s_hum_jitter_y *= 0.86f;
+    }
+
     void RunAimbot() {
-        if (!aimbot_enabled || aimbot_keybind == 0) {
+        if (!aimbot_enabled) {
             locked_head = 0;
             locked_player = 0;
             was_key_held = false;
             return;
         }
 
-        bool key_held = (GetAsyncKeyState(aimbot_keybind) & 0x8000) != 0;
+        // no keybind set -> always active while enabled; otherwise hold-to-use
+        bool key_held = (aimbot_keybind == 0) || ((GetAsyncKeyState(aimbot_keybind) & 0x8000) != 0);
 
         if (!key_held) {
             locked_head = 0;
@@ -303,13 +439,13 @@ namespace features {
             AimVec2 viewport{};
             if (!GetViewData(view, viewport)) return;
 
-            POINT cur;
-            GetCursorPos(&cur);
-            AimVec2 fov_center = { (float)cur.x, (float)cur.y };
+            AimVec2 fov_center = { viewport.x * 0.5f, viewport.y * 0.5f };
 
             uintptr_t found_part = 0;
             uintptr_t found_player = 0;
             if (!FindClosestTarget(view, viewport, fov_center, found_part, found_player)) return;
+
+            HumanizerOnTarget(found_part);
 
             if (aimbot_aim_type == 0)
                 AimAtPrimitive(found_part);
@@ -323,9 +459,7 @@ namespace features {
             AimVec2 viewport{};
             if (!GetViewData(view, viewport)) return;
 
-            POINT cur;
-            GetCursorPos(&cur);
-            AimVec2 fov_center = { (float)cur.x, (float)cur.y };
+            AimVec2 fov_center = { viewport.x * 0.5f, viewport.y * 0.5f };
 
             uintptr_t found_part = 0;
             uintptr_t found_player = 0;
@@ -348,9 +482,20 @@ namespace features {
             if (is_valid_address(locked_head)) {
                 AimVec3 test{};
                 if (AimReadRaw(locked_head + Offsets::Primitive::Position, &test, sizeof(test))) {
+                    if (wall_check) {
+                        AimVec3 cam_pos{}; float rot[9]{};
+                        if (GetCameraTransform(cam_pos, rot) &&
+                            !LineOfSightClear(cam_pos, test, locked_player)) {
+                            locked_head = 0;
+                            locked_player = 0;
+                            was_key_held = true;
+                            return;
+                        }
+                    }
                     bool do_aim = (now_aim - last_aim_update_time) >= k_aim_update_interval_ms;
                     if (do_aim) {
                         last_aim_update_time = now_aim;
+                        HumanizerOnTarget(locked_head);
                         if (aimbot_aim_type == 0)
                             AimAtPrimitive(locked_head);
                         else
@@ -373,9 +518,11 @@ namespace features {
         ImDrawList* draw = ImGui::GetBackgroundDrawList();
         if (!draw) return;
 
-        POINT cur;
-        GetCursorPos(&cur);
-        draw->AddCircle(ImVec2((float)cur.x, (float)cur.y), fov_size, IM_COL32(255, 255, 255, 180), 64, 1.0f);
+        // fixed at the centre of the screen (the crosshair), not the mouse
+        ImVec2 center = ImGui::GetIO().DisplaySize;
+        center.x *= 0.5f;
+        center.y *= 0.5f;
+        draw->AddCircle(center, fov_size, IM_COL32(255, 255, 255, 180), 64, 1.0f);
     }
 }
 

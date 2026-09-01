@@ -17,7 +17,7 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-namespace discord_overlay
+namespace overlay
 {
     inline ID3D11Device*           g_device        = nullptr;
     inline ID3D11DeviceContext*    g_context       = nullptr;
@@ -311,8 +311,7 @@ namespace discord_overlay
         return DefWindowProcA(hWnd, msg, wParam, lParam);
     }
 
-    // creates our own transparent click-through overlay window covering every monitor.
-    // no discord required.
+    // creates our own transparent click-through overlay window.
     inline void add_tray_icon()
     {
         NOTIFYICONDATAA nid{};
@@ -404,8 +403,8 @@ namespace discord_overlay
         if (!g_class_atom)
             return false;
 
-        // cover the primary monitor starting at 0,0 - this matches the geometry the
-        // discord overlay had, so the esp screen-space math stays correct.
+        // cover the primary monitor starting at 0,0 so the esp screen-space math
+        // lines up with the game's own coordinate system.
         // (if roblox lives on a second monitor, switch these to SM_XVIRTUALSCREEN /
         //  SM_YVIRTUALSCREEN / SM_CXVIRTUALSCREEN / SM_CYVIRTUALSCREEN)
         int vx = 0;
@@ -488,102 +487,106 @@ namespace discord_overlay
         return true;
     }
 
-    // glassy red theme - translucent panels so the game shows through, red accents
+    // frosted-glass theme. panels stay translucent so the game shows through,
+    // with soft rounded corners, a light top sheen and a single accent colour.
+    // the accent + transparency are re-applied every frame in render_ui().
     inline void apply_theme()
     {
         ImGuiStyle& s = ImGui::GetStyle();
 
-        s.WindowRounding    = 0.0f;   // phetamine is flat/square
-        s.ChildRounding     = 0.0f;
-        s.FrameRounding     = 0.0f;
-        s.PopupRounding     = 0.0f;
-        s.ScrollbarRounding = 8.0f;
-        s.GrabRounding      = 6.0f;
-        s.TabRounding       = 0.0f;
+        s.WindowRounding    = 14.0f;
+        s.ChildRounding     = 10.0f;
+        s.FrameRounding     = 8.0f;
+        s.PopupRounding     = 10.0f;
+        s.ScrollbarRounding = 9.0f;
+        s.GrabRounding      = 9.0f;
+        s.TabRounding       = 8.0f;
 
-        s.WindowBorderSize  = 3.0f;   // thick red glow border
-        s.ChildBorderSize   = 1.0f;
+        s.WindowBorderSize  = 0.0f;   // the menu draws its own glass frame
+        s.ChildBorderSize   = 0.0f;
         s.PopupBorderSize   = 1.0f;
-        s.FrameBorderSize   = 1.0f;
+        s.FrameBorderSize   = 0.0f;
         s.TabBorderSize     = 0.0f;
 
-        s.WindowPadding     = ImVec2(16, 16);
-        s.FramePadding      = ImVec2(14, 8);   // wider tabs so labels aren't clipped
-        s.ItemSpacing       = ImVec2(12, 10);
-        s.ItemInnerSpacing  = ImVec2(10, 8);
+        s.WindowPadding     = ImVec2(18, 18);
+        s.FramePadding      = ImVec2(12, 7);
+        s.ItemSpacing       = ImVec2(10, 9);
+        s.ItemInnerSpacing  = ImVec2(8, 6);
         s.CellPadding       = ImVec2(8, 6);
-        s.ScrollbarSize     = 14.0f;
+        s.ScrollbarSize     = 12.0f;
         s.GrabMinSize       = 12.0f;
         s.WindowTitleAlign  = ImVec2(0.5f, 0.5f);
-        s.SeparatorTextBorderSize = 2.0f;
-        s.SeparatorTextPadding    = ImVec2(20, 6);
+        s.SeparatorTextBorderSize = 1.0f;
+        s.SeparatorTextPadding    = ImVec2(16, 5);
+        s.IndentSpacing     = 18.0f;
 
         ImVec4* c = s.Colors;
 
-        const ImVec4 red        = ImVec4(0.78f, 0.08f, 0.08f, 1.00f);
-        const ImVec4 red_dim    = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
-        const ImVec4 red_soft   = ImVec4(0.78f, 0.08f, 0.08f, 0.28f);
-        const ImVec4 glass      = ImVec4(0.031f, 0.031f, 0.047f, 0.94f); // BG_MAIN 8,8,12
-        const ImVec4 glass_deep = ImVec4(0.03f, 0.03f, 0.05f, 0.90f);
-        const ImVec4 glass_soft = ImVec4(0.10f, 0.10f, 0.13f, 0.60f);
+        const ImVec4 accent      = ImVec4(0.78f, 0.08f, 0.08f, 1.00f);   // crimson red
+        const ImVec4 accent_dim  = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
+        const ImVec4 accent_soft = ImVec4(0.78f, 0.08f, 0.08f, 0.24f);
+        const ImVec4 glass       = ImVec4(0.055f, 0.060f, 0.090f, 0.92f);
+        const ImVec4 glass_deep  = ImVec4(0.035f, 0.038f, 0.058f, 0.95f);
+        const ImVec4 glass_soft  = ImVec4(0.16f, 0.17f, 0.24f, 0.40f);
+        const ImVec4 line        = ImVec4(1.00f, 1.00f, 1.00f, 0.08f);
 
-        c[ImGuiCol_Text]                 = ImVec4(0.94f, 0.94f, 0.96f, 1.00f);
-        c[ImGuiCol_TextDisabled]         = ImVec4(0.45f, 0.45f, 0.50f, 1.00f);
+        c[ImGuiCol_Text]                 = ImVec4(0.93f, 0.94f, 0.98f, 1.00f);
+        c[ImGuiCol_TextDisabled]         = ImVec4(0.55f, 0.57f, 0.66f, 1.00f);
         c[ImGuiCol_WindowBg]             = glass;
-        c[ImGuiCol_ChildBg]              = ImVec4(0.08f, 0.08f, 0.10f, 0.45f);
+        c[ImGuiCol_ChildBg]              = ImVec4(0.10f, 0.11f, 0.16f, 0.28f);
         c[ImGuiCol_PopupBg]              = glass_deep;
-        c[ImGuiCol_Border]               = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
+        c[ImGuiCol_Border]               = ImVec4(0.78f, 0.08f, 0.08f, 0.38f);
         c[ImGuiCol_BorderShadow]         = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 
         c[ImGuiCol_FrameBg]              = glass_soft;
-        c[ImGuiCol_FrameBgHovered]       = red_soft;
-        c[ImGuiCol_FrameBgActive]        = red_dim;
+        c[ImGuiCol_FrameBgHovered]       = ImVec4(0.78f, 0.08f, 0.08f, 0.18f);
+        c[ImGuiCol_FrameBgActive]        = ImVec4(0.78f, 0.08f, 0.08f, 0.32f);
 
         c[ImGuiCol_TitleBg]              = glass_deep;
-        c[ImGuiCol_TitleBgActive]        = ImVec4(0.16f, 0.04f, 0.07f, 0.95f);
-        c[ImGuiCol_TitleBgCollapsed]     = ImVec4(0.05f, 0.05f, 0.07f, 0.60f);
+        c[ImGuiCol_TitleBgActive]        = glass_deep;
+        c[ImGuiCol_TitleBgCollapsed]     = ImVec4(0.04f, 0.04f, 0.06f, 0.60f);
         c[ImGuiCol_MenuBarBg]            = glass_deep;
 
-        c[ImGuiCol_ScrollbarBg]          = ImVec4(0.03f, 0.03f, 0.05f, 0.40f);
-        c[ImGuiCol_ScrollbarGrab]        = red_soft;
-        c[ImGuiCol_ScrollbarGrabHovered] = red_dim;
-        c[ImGuiCol_ScrollbarGrabActive]  = red;
+        c[ImGuiCol_ScrollbarBg]          = ImVec4(0.02f, 0.02f, 0.04f, 0.40f);
+        c[ImGuiCol_ScrollbarGrab]        = accent_soft;
+        c[ImGuiCol_ScrollbarGrabHovered] = accent_dim;
+        c[ImGuiCol_ScrollbarGrabActive]  = accent;
 
-        c[ImGuiCol_CheckMark]            = red;
-        c[ImGuiCol_SliderGrab]           = red_dim;
-        c[ImGuiCol_SliderGrabActive]     = red;
+        c[ImGuiCol_CheckMark]            = accent;
+        c[ImGuiCol_SliderGrab]           = accent_dim;
+        c[ImGuiCol_SliderGrabActive]     = accent;
 
         c[ImGuiCol_Button]               = glass_soft;
-        c[ImGuiCol_ButtonHovered]        = red_soft;
-        c[ImGuiCol_ButtonActive]         = red_dim;
+        c[ImGuiCol_ButtonHovered]        = ImVec4(0.78f, 0.08f, 0.08f, 0.30f);
+        c[ImGuiCol_ButtonActive]         = ImVec4(0.78f, 0.08f, 0.08f, 0.55f);
 
-        c[ImGuiCol_Header]               = red_soft;
-        c[ImGuiCol_HeaderHovered]        = red_dim;
-        c[ImGuiCol_HeaderActive]         = red;
+        c[ImGuiCol_Header]               = accent_soft;
+        c[ImGuiCol_HeaderHovered]        = accent_dim;
+        c[ImGuiCol_HeaderActive]         = accent;
 
-        c[ImGuiCol_Separator]            = ImVec4(0.86f, 0.13f, 0.24f, 0.25f);
-        c[ImGuiCol_SeparatorHovered]     = red_dim;
-        c[ImGuiCol_SeparatorActive]      = red;
+        c[ImGuiCol_Separator]            = line;
+        c[ImGuiCol_SeparatorHovered]     = accent_dim;
+        c[ImGuiCol_SeparatorActive]      = accent;
 
-        c[ImGuiCol_ResizeGrip]           = red_soft;
-        c[ImGuiCol_ResizeGripHovered]    = red_dim;
-        c[ImGuiCol_ResizeGripActive]     = red;
+        c[ImGuiCol_ResizeGrip]           = accent_soft;
+        c[ImGuiCol_ResizeGripHovered]    = accent_dim;
+        c[ImGuiCol_ResizeGripActive]     = accent;
 
-        c[ImGuiCol_Tab]                  = ImVec4(0.10f, 0.05f, 0.07f, 0.80f);
-        c[ImGuiCol_TabHovered]           = red_dim;
-        c[ImGuiCol_TabActive]            = ImVec4(0.35f, 0.07f, 0.13f, 0.95f);
-        c[ImGuiCol_TabUnfocused]         = ImVec4(0.08f, 0.04f, 0.06f, 0.80f);
-        c[ImGuiCol_TabUnfocusedActive]   = ImVec4(0.22f, 0.05f, 0.09f, 0.90f);
+        c[ImGuiCol_Tab]                  = ImVec4(0.12f, 0.13f, 0.19f, 0.80f);
+        c[ImGuiCol_TabHovered]           = accent_dim;
+        c[ImGuiCol_TabActive]            = ImVec4(0.78f, 0.08f, 0.08f, 0.85f);
+        c[ImGuiCol_TabUnfocused]         = ImVec4(0.10f, 0.11f, 0.16f, 0.80f);
+        c[ImGuiCol_TabUnfocusedActive]   = ImVec4(0.78f, 0.08f, 0.08f, 0.60f);
 
-        c[ImGuiCol_PlotLines]            = red;
-        c[ImGuiCol_PlotLinesHovered]     = ImVec4(1.00f, 0.35f, 0.45f, 1.00f);
-        c[ImGuiCol_PlotHistogram]        = red;
-        c[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.35f, 0.45f, 1.00f);
+        c[ImGuiCol_PlotLines]            = accent;
+        c[ImGuiCol_PlotLinesHovered]     = ImVec4(1.00f, 0.45f, 0.50f, 1.00f);
+        c[ImGuiCol_PlotHistogram]        = accent;
+        c[ImGuiCol_PlotHistogramHovered] = ImVec4(1.00f, 0.45f, 0.50f, 1.00f);
 
-        c[ImGuiCol_TextSelectedBg]       = red_dim;
-        c[ImGuiCol_DragDropTarget]       = red;
-        c[ImGuiCol_NavHighlight]         = red;
-        c[ImGuiCol_ModalWindowDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.45f);
+        c[ImGuiCol_TextSelectedBg]       = accent_dim;
+        c[ImGuiCol_DragDropTarget]       = accent;
+        c[ImGuiCol_NavHighlight]         = accent;
+        c[ImGuiCol_ModalWindowDimBg]     = ImVec4(0.00f, 0.00f, 0.00f, 0.50f);
     }
 
     inline bool init_imgui()

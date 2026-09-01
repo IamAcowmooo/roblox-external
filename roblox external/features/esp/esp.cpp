@@ -5,15 +5,13 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
-#include <unordered_set>
 #include "esp.h"
 #include "globals.h"
 #include "memory.h"
 #include "cache.h"
 #include "offsets.h"
-#include "overlay.h"
+#include "game.h"
 #include "imgui/imgui.h"
-#include <clipper2/clipper.h>
 
 namespace features {
 
@@ -40,18 +38,6 @@ namespace features {
         bool valid;
     };
 
-    enum R15ChainId {
-        ChainNone = -1,
-        ChainLeftArm = 0,
-        ChainRightArm = 1,
-        ChainLeftLeg = 2,
-        ChainRightLeg = 3,
-        ChainCount = 4,
-    };
-
-    static std::unordered_set<uint64_t> g_logged_missing_mesh_asset;
-    static std::unordered_set<uint64_t> g_logged_missing_mesh_data;
-
     static bool ReadRaw(uint64_t address, void* buffer, size_t size) {
         return read_raw(address, buffer, size);
     }
@@ -62,14 +48,6 @@ namespace features {
 
     static bool ReadVec3(uint64_t address, Vec3& out) {
         return ReadRaw(address, &out, sizeof(out));
-    }
-
-    static bool ReadMatrix(uint64_t address, Matrix4& out) {
-        return ReadRaw(address, &out, sizeof(out));
-    }
-
-    static float Dot(const Vec3& a, const Vec3& b) {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
     static float LengthSq(const Vec3& v) {
@@ -87,23 +65,6 @@ namespace features {
         return { a.x - b.x, a.y - b.y, a.z - b.z };
     }
 
-    static Vec3 ToLocal(const float* m, const Vec3& world_delta) {
-        return {
-            m[0] * world_delta.x + m[3] * world_delta.y + m[6] * world_delta.z,
-            m[1] * world_delta.x + m[4] * world_delta.y + m[7] * world_delta.z,
-            m[2] * world_delta.x + m[5] * world_delta.y + m[8] * world_delta.z
-        };
-    }
-
-    static void RotateYVariant(int variant, float in_x, float in_y, float in_z, float& out_x, float& out_y, float& out_z) {
-        switch (variant & 3) {
-        case 1: out_x = -in_x; out_y = in_y; out_z = -in_z; break;
-        case 2: out_x = in_z; out_y = in_y; out_z = -in_x; break;
-        case 3: out_x = -in_z; out_y = in_y; out_z = in_x; break;
-        default: out_x = in_x; out_y = in_y; out_z = in_z; break;
-        }
-    }
-
     static int FindEntityPartIndex(const cache::EspEntity& entity, const char* part_name) {
         for (size_t i = 0; i < entity.primitive_count; ++i) {
             if (strcmp(entity.part_names[i], part_name) == 0) return (int)i;
@@ -111,36 +72,71 @@ namespace features {
         return -1;
     }
 
-    static const char* GetR15ChainNames(R15ChainId chain_id, const char*& anchor, const char*& upper, const char*& lower, const char*& end) {
-        switch (chain_id) {
-        case ChainLeftArm:
-            anchor = "UpperTorso"; upper = "LeftUpperArm"; lower = "LeftLowerArm"; end = "LeftHand"; return upper;
-        case ChainRightArm:
-            anchor = "UpperTorso"; upper = "RightUpperArm"; lower = "RightLowerArm"; end = "RightHand"; return upper;
-        case ChainLeftLeg:
-            anchor = "LowerTorso"; upper = "LeftUpperLeg"; lower = "LeftLowerLeg"; end = "LeftFoot"; return upper;
-        case ChainRightLeg:
-            anchor = "LowerTorso"; upper = "RightUpperLeg"; lower = "RightLowerLeg"; end = "RightFoot"; return upper;
-        default:
-            anchor = nullptr; upper = nullptr; lower = nullptr; end = nullptr; return nullptr;
-        }
+
+    static instance cached_camera{};
+    static DWORD last_camera_lookup = 0;
+
+    static instance GetCameraInstance() {
+        DWORD now = GetTickCount();
+        if (cached_camera.is_valid() && (now - last_camera_lookup) < 2000)
+            return cached_camera;
+
+        instance dm = game::ReadDatamodel(g_base_address);
+        if (!dm.is_valid()) return instance{};
+        instance ws = dm.read_service("Workspace");
+        if (!ws.is_valid()) return instance{};
+        cached_camera = read<instance>(ws.address + Offsets::Workspace::CurrentCamera);
+        last_camera_lookup = now;
+        return cached_camera;
     }
 
-    static R15ChainId GetR15ChainId(const char* part_name) {
-        if (strcmp(part_name, "LeftUpperArm") == 0 || strcmp(part_name, "LeftLowerArm") == 0 || strcmp(part_name, "LeftHand") == 0) return ChainLeftArm;
-        if (strcmp(part_name, "RightUpperArm") == 0 || strcmp(part_name, "RightLowerArm") == 0 || strcmp(part_name, "RightHand") == 0) return ChainRightArm;
-        if (strcmp(part_name, "LeftUpperLeg") == 0 || strcmp(part_name, "LeftLowerLeg") == 0 || strcmp(part_name, "LeftFoot") == 0) return ChainLeftLeg;
-        if (strcmp(part_name, "RightUpperLeg") == 0 || strcmp(part_name, "RightLowerLeg") == 0 || strcmp(part_name, "RightFoot") == 0) return ChainRightLeg;
-        return ChainNone;
+    static float Dot3(const Vec3& a, const Vec3& b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
-
+    // Build the clip matrix from the CAMERA itself (position/rotation/fov), not
+    // from VisualEngine::ViewMatrix. The camera offsets are the ones every other
+    // feature uses and are confirmed working, while the ViewMatrix layout on this
+    // client was the thing making boxes drift off the character with distance.
     static bool GetCamera(Matrix4& view, Vec2& viewport) {
         instance ve = read<instance>(g_base_address + Offsets::VisualEngine::Pointer);
         if (!ve.is_valid()) return false;
-        if (!ReadMatrix(ve.address + Offsets::VisualEngine::ViewMatrix, view)) return false;
         if (!ReadVec2(ve.address + Offsets::VisualEngine::Dimensions, viewport)) return false;
         if (viewport.x <= 0.0f || viewport.y <= 0.0f) return false;
+
+        instance cam = GetCameraInstance();
+        if (!cam.is_valid()) return false;
+
+        Vec3 pos{};
+        float rot[9]{};
+        if (!ReadVec3(cam.address + Offsets::Camera::Position, pos)) return false;
+        if (!ReadRaw(cam.address + Offsets::Camera::Rotation, rot, sizeof(rot))) return false;
+
+        float fov = read<float>(cam.address + Offsets::Camera::FieldOfView);
+        if (fov < 0.1f || fov > 3.0f) fov = 1.2217f;   // ~70 deg fallback
+
+        // camera basis out of the Roblox rotation matrix (column-major: right/up/-forward)
+        Vec3 right = {  rot[0],  rot[3],  rot[6] };
+        Vec3 up    = {  rot[1],  rot[4],  rot[7] };
+        Vec3 fwd   = { -rot[2], -rot[5], -rot[8] };
+
+        float tan_half = tanf(fov * 0.5f);
+        float aspect   = viewport.x / viewport.y;
+        float scale_x  = 1.0f / (tan_half * aspect);
+        float scale_y  = 1.0f / tan_half;
+
+        // column-major matrix matching WorldToScreen's layout:
+        //   clip.x = x*m0 + y*m1 + z*m2 + m3  = dot(right, p-pos) * scale_x
+        //   clip.y = x*m4 + y*m5 + z*m6 + m7  = dot(up,    p-pos) * scale_y
+        //   clip.w = x*m12+ y*m13+ z*m14+ m15 = dot(fwd,   p-pos)
+        float* m = view.data;
+        m[0]  = right.x * scale_x;  m[1]  = right.y * scale_x;  m[2]  = right.z * scale_x;
+        m[3]  = -Dot3(right, pos) * scale_x;
+        m[4]  = up.x * scale_y;     m[5]  = up.y * scale_y;     m[6]  = up.z * scale_y;
+        m[7]  = -Dot3(up, pos) * scale_y;
+        m[8]  = 0.0f;               m[9]  = 0.0f;               m[10] = 0.0f;               m[11] = 0.0f;
+        m[12] = fwd.x;              m[13] = fwd.y;              m[14] = fwd.z;
+        m[15] = -Dot3(fwd, pos);
         return true;
     }
 
@@ -157,17 +153,90 @@ namespace features {
         return true;
     }
 
+    // Canonical Roblox body-part sizes (studs). This client build reports ~0 from
+    // Primitive::Size, so we fall back to these instead of letting a zero-sized
+    // part collapse onto its centre point - that's what made the box float above
+    // the character and shrink as they got further away.
+    static void CanonicalPartSize(const char* name, Vec3& out) {
+        if (!name) { out = { 1, 1, 1 }; return; }
+        if (!strcmp(name, "Head"))                        { out = { 2, 1, 1 }; return; }
+        if (!strcmp(name, "HumanoidRootPart"))            { out = { 2, 2, 1 }; return; }
+        if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { out = { 2, 2, 1 }; return; }
+        if (!strcmp(name, "LowerTorso"))                  { out = { 2, 1, 1 }; return; }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
+            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
+            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
+            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
+            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand") ||
+            !strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
+        out = { 1, 1, 1 };
+    }
+
+    // Wall check: segment-vs-AABB ray against the other players' cached parts.
+    // (An external can't call the game's raycast and we don't have the world
+    // primitives list, so this is line-of-sight through OTHER PLAYERS only.)
+    static bool SegmentHitsAABB(const Vec3& from, const Vec3& to,
+                                const Vec3& center, const Vec3& half) {
+        float org[3] = { from.x, from.y, from.z };
+        float dir[3] = { to.x - from.x, to.y - from.y, to.z - from.z };
+        float c[3]   = { center.x, center.y, center.z };
+        float h[3]   = { half.x, half.y, half.z };
+        float tmin = 0.0f, tmax = 1.0f;
+        for (int i = 0; i < 3; ++i) {
+            float e = org[i], f = dir[i], mn = c[i] - h[i], mx = c[i] + h[i];
+            if (f > -1e-6f && f < 1e-6f) {
+                if (e < mn || e > mx) return false;
+            } else {
+                float t1 = (mn - e) / f;
+                float t2 = (mx - e) / f;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) return false;
+            }
+        }
+        return true;
+    }
+
+    static bool LOSClear(const Vec3& from, const Vec3& to, uintptr_t skip_player) {
+        if (!wall_check) return true;
+        auto ents_snap = cache::GetEspSnapshot();
+        const auto& ents = *ents_snap;
+        for (const auto& ent : ents) {
+            if (ent.player_address == skip_player) continue;
+            for (size_t i = 0; i < ent.primitive_count; ++i) {
+                uintptr_t p = ent.primitives[i];
+                if (!is_valid_address(p)) continue;
+                Vec3 c{};
+                if (!ReadVec3(p + Offsets::Primitive::Position, c)) continue;
+                Vec3 size{};
+                CanonicalPartSize(ent.part_names[i], size);
+                Vec3 half = { size.x * 0.5f, size.y * 0.5f, size.z * 0.5f };
+                if (SegmentHitsAABB(from, to, c, half)) return false;
+            }
+        }
+        return true;
+    }
+
     static bool ComputeBoxForPrimitives(const cache::EspEntity& entity, const Matrix4& view, const Vec2& viewport, Box2D& out_box) {
         if (entity.primitive_count == 0) {
             out_box.valid = false;
             return false;
         }
 
-        bool has_point = false;
-        float min_x = 0.0f;
-        float min_y = 0.0f;
-        float max_x = 0.0f;
-        float max_y = 0.0f;
+        // Build ONE world-space axis-aligned box around the character from each
+        // part's centre + its canonical body size, then project that box's 8
+        // corners. We deliberately do NOT read Primitive::Size / Primitive::Rotation
+        // here: both offsets are unreliable on this client (Size reads ~0, Rotation
+        // can be garbage), and applying them is what made the box drift above the
+        // character and wobble with distance. Body-part sizes are essentially
+        // constant in Roblox, so canonical sizes give a stable, distance-independent
+        // box that hugs the character.
+        float min_x = 1e30f, min_y = 1e30f, min_z = 1e30f;
+        float max_x = -1e30f, max_y = -1e30f, max_z = -1e30f;
+        bool any = false;
 
         for (size_t i = 0; i < entity.primitive_count; ++i) {
             uintptr_t primitive = entity.primitives[i];
@@ -175,59 +244,47 @@ namespace features {
             Vec3 pos{};
             Vec3 size{};
             if (!ReadVec3(primitive + Offsets::Primitive::Position, pos)) continue;
-            if (!ReadVec3(primitive + Offsets::Primitive::Size, size)) continue;
-
-            // A part whose size reads back as ~0 collapses its 8 corners onto the
-            // part's centre. With the feet contributing only their centre point the
-            // whole box ends up sitting slightly above the character, so fall back
-            // to a sane default extent instead.
-            if (size.x < 0.05f && size.y < 0.05f && size.z < 0.05f)
-                size = { 1.0f, 1.0f, 1.0f };
+            CanonicalPartSize(entity.part_names[i], size);
 
             float hx = size.x * 0.5f;
             float hy = size.y * 0.5f;
             float hz = size.z * 0.5f;
 
-            // apply the part's 3x3 rotation matrix, otherwise rotated/tilted parts
-            // produce a box that is far too big and drifts as the player turns
-            float rot[9] = {};
-            bool have_rot = ReadRaw(primitive + Offsets::Primitive::Rotation, rot, sizeof(rot));
+            if (pos.x - hx < min_x) min_x = pos.x - hx;
+            if (pos.x + hx > max_x) max_x = pos.x + hx;
+            if (pos.y - hy < min_y) min_y = pos.y - hy;
+            if (pos.y + hy > max_y) max_y = pos.y + hy;
+            if (pos.z - hz < min_z) min_z = pos.z - hz;
+            if (pos.z + hz > max_z) max_z = pos.z + hz;
+            any = true;
+        }
 
-            static const float local[8][3] = {
-                {-1,-1,-1},{-1,-1, 1},{-1, 1,-1},{-1, 1, 1},
-                { 1,-1,-1},{ 1,-1, 1},{ 1, 1,-1},{ 1, 1, 1}
-            };
+        if (!any) {
+            out_box.valid = false;
+            return false;
+        }
 
-            Vec3 corners[8];
-            for (int c = 0; c < 8; ++c) {
-                float lx = local[c][0] * hx;
-                float ly = local[c][1] * hy;
-                float lz = local[c][2] * hz;
+        const Vec3 corners[8] = {
+            { min_x, min_y, min_z }, { min_x, min_y, max_z },
+            { min_x, max_y, min_z }, { min_x, max_y, max_z },
+            { max_x, min_y, min_z }, { max_x, min_y, max_z },
+            { max_x, max_y, min_z }, { max_x, max_y, max_z },
+        };
 
-                if (have_rot) {
-                    corners[c] = {
-                        pos.x + rot[0] * lx + rot[1] * ly + rot[2] * lz,
-                        pos.y + rot[3] * lx + rot[4] * ly + rot[5] * lz,
-                        pos.z + rot[6] * lx + rot[7] * ly + rot[8] * lz
-                    };
+        bool has_point = false;
+        float scr_min_x = 0.0f, scr_min_y = 0.0f, scr_max_x = 0.0f, scr_max_y = 0.0f;
+        for (int c = 0; c < 8; ++c) {
+            Vec2 pt{};
+            if (WorldToScreen(corners[c], pt, view, viewport)) {
+                if (!has_point) {
+                    scr_min_x = scr_max_x = pt.x;
+                    scr_min_y = scr_max_y = pt.y;
+                    has_point = true;
                 } else {
-                    corners[c] = { pos.x + lx, pos.y + ly, pos.z + lz };
-                }
-            }
-
-            for (int c = 0; c < 8; ++c) {
-                Vec2 pt{};
-                if (WorldToScreen(corners[c], pt, view, viewport)) {
-                    if (!has_point) {
-                        min_x = max_x = pt.x;
-                        min_y = max_y = pt.y;
-                        has_point = true;
-                    } else {
-                        if (pt.x < min_x) min_x = pt.x;
-                        if (pt.x > max_x) max_x = pt.x;
-                        if (pt.y < min_y) min_y = pt.y;
-                        if (pt.y > max_y) max_y = pt.y;
-                    }
+                    if (pt.x < scr_min_x) scr_min_x = pt.x;
+                    if (pt.x > scr_max_x) scr_max_x = pt.x;
+                    if (pt.y < scr_min_y) scr_min_y = pt.y;
+                    if (pt.y > scr_max_y) scr_max_y = pt.y;
                 }
             }
         }
@@ -237,17 +294,17 @@ namespace features {
             return false;
         }
 
-        float w = max_x - min_x;
-        float h = max_y - min_y;
+        float w = scr_max_x - scr_min_x;
+        float h = scr_max_y - scr_min_y;
         if (w <= 1.0f || h <= 1.0f) {
             out_box.valid = false;
             return false;
         }
 
-        out_box.min_x = min_x;
-        out_box.min_y = min_y;
-        out_box.max_x = max_x;
-        out_box.max_y = max_y;
+        out_box.min_x = scr_min_x;
+        out_box.min_y = scr_min_y;
+        out_box.max_x = scr_max_x;
+        out_box.max_y = scr_max_y;
         out_box.valid = true;
         return true;
     }
@@ -359,12 +416,7 @@ namespace features {
             (int)(skeleton_color[2] * 255.0f),
             (int)(skeleton_color[3] * 255.0f)
         );
-        
-        ImU32 black = IM_COL32(0, 0, 0, 200);
 
-        // Pre-allocate position cache to reduce ReadProcessMemory calls
-        static Vec3 bone_positions[32];
-        
         for (const cache::SkeletonEntity& skel : skeletons) {
             if (!skel.head || !skel.upper_torso) continue;
 
@@ -670,31 +722,6 @@ namespace features {
         DrawTextWithShadow(draw, font_size, ImVec2(x_pos, y_pos), col, buf);
     }
 
-    static int ComputeConvexHull(ImVec2* pts, int n) {
-        if (n < 3) return n;
-        std::sort(pts, pts + n, [](const ImVec2& a, const ImVec2& b) {
-            return a.x < b.x || (a.x == b.x && a.y < b.y);
-        });
-        static ImVec2 hull[256];
-        int k = 0;
-        for (int i = 0; i < n; i++) {
-            while (k >= 2 && (hull[k-1].x - hull[k-2].x) * (pts[i].y - hull[k-2].y)
-                            - (hull[k-1].y - hull[k-2].y) * (pts[i].x - hull[k-2].x) <= 0.0f)
-                k--;
-            hull[k++] = pts[i];
-        }
-        int lower = k + 1;
-        for (int i = n - 2; i >= 0; i--) {
-            while (k >= lower && (hull[k-1].x - hull[k-2].x) * (pts[i].y - hull[k-2].y)
-                                - (hull[k-1].y - hull[k-2].y) * (pts[i].x - hull[k-2].x) <= 0.0f)
-                k--;
-            hull[k++] = pts[i];
-        }
-        k--;
-        for (int i = 0; i < k; i++) pts[i] = hull[i];
-        return k;
-    }
-
     void RenderChams() {
         Matrix4 view{};
         Vec2 viewport{};
@@ -766,83 +793,6 @@ namespace features {
             }
         }
     }
-
-    static constexpr double CLIPPER_SCALE = 100.0;
-
-    static void DrawMergedPoly(const Clipper2Lib::Path64& poly, ImDrawList* draw, ImU32 col) {
-        int n = (int)poly.size();
-        if (n < 3 || n > 256) return;
-
-        static ImVec2 verts[256];
-        static int idx[256];
-
-        for (int i = 0; i < n; i++)
-            verts[i] = {(float)(poly[i].x / CLIPPER_SCALE), (float)(poly[i].y / CLIPPER_SCALE)};
-
-        float area = 0.0f;
-        for (int i = 0; i < n; i++) {
-            int j = (i + 1) % n;
-            area += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
-        }
-        for (int i = 0; i < n; i++) idx[i] = (area > 0.0f) ? i : (n - 1 - i);
-
-        static ImVec2 tris[768];
-        int tri_count = 0;
-        int nv = n;
-        int safety = nv * nv;
-        int vi = 0;
-
-        while (nv > 2 && safety-- > 0) {
-            int u = vi % nv;
-            int v = (vi + 1) % nv;
-            int w = (vi + 2) % nv;
-            const ImVec2& pu = verts[idx[u]];
-            const ImVec2& pv = verts[idx[v]];
-            const ImVec2& pw = verts[idx[w]];
-            float cross = (pv.x - pu.x) * (pw.y - pu.y) - (pv.y - pu.y) * (pw.x - pu.x);
-            if (cross > 0.0f) {
-                bool ear = true;
-                for (int k2 = 0; k2 < nv; k2++) {
-                    if (k2 == u || k2 == v || k2 == w) continue;
-                    const ImVec2& pt = verts[idx[k2]];
-                    float d1 = (pt.x - pv.x) * (pu.y - pv.y) - (pu.x - pv.x) * (pt.y - pv.y);
-                    float d2 = (pt.x - pw.x) * (pv.y - pw.y) - (pv.x - pw.x) * (pt.y - pw.y);
-                    float d3 = (pt.x - pu.x) * (pw.y - pu.y) - (pw.x - pu.x) * (pt.y - pu.y);
-                    if (!((d1 < 0) || (d2 < 0) || (d3 < 0)) || !((d1 > 0) || (d2 > 0) || (d3 > 0))) {
-                        ear = false;
-                        break;
-                    }
-                }
-                if (ear) {
-                    tris[tri_count * 3] = pu;
-                    tris[tri_count * 3 + 1] = pv;
-                    tris[tri_count * 3 + 2] = pw;
-                    tri_count++;
-                    for (int k2 = v; k2 < nv - 1; k2++) idx[k2] = idx[k2 + 1];
-                    nv--;
-                    if (vi > 0) vi--;
-                    safety = nv * nv;
-                    continue;
-                }
-            }
-            vi++;
-        }
-
-        if (tri_count == 0) return;
-        ImVec2 uv = ImGui::GetIO().Fonts->TexUvWhitePixel;
-        draw->PrimReserve(tri_count * 3, tri_count * 3);
-        for (int i = 0; i < tri_count; i++) {
-            ImDrawIdx base = (ImDrawIdx)draw->_VtxCurrentIdx;
-            draw->PrimWriteIdx(base);
-            draw->PrimWriteIdx(base + 1);
-            draw->PrimWriteIdx(base + 2);
-            draw->PrimWriteVtx(tris[i * 3], uv, col);
-            draw->PrimWriteVtx(tris[i * 3 + 1], uv, col);
-            draw->PrimWriteVtx(tris[i * 3 + 2], uv, col);
-        }
-    }
-
-
 
     void RenderExpandedHitbox() {
         if (!render_expanded_hitbox) return;
@@ -935,6 +885,14 @@ namespace features {
 
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
 
+        Vec3 cam_pos{};
+        bool have_cam = false;
+        if (wall_check) {
+            instance cam = GetCameraInstance();
+            if (cam.is_valid() && ReadVec3(cam.address + Offsets::Camera::Position, cam_pos))
+                have_cam = true;
+        }
+
         for (const cache::EspEntity& entity : entities) {
             if (esp_render_distance > 0.0f && lp.valid) {
                 float dx = entity.root_x - lp.x;
@@ -942,6 +900,12 @@ namespace features {
                 float dz = entity.root_z - lp.z;
                 float dist = sqrtf(dx * dx + dy * dy + dz * dz);
                 if (dist > esp_render_distance) continue;
+            }
+
+            if (wall_check && have_cam &&
+                !(entity.root_x == 0.0f && entity.root_y == 0.0f && entity.root_z == 0.0f)) {
+                Vec3 root = { entity.root_x, entity.root_y, entity.root_z };
+                if (!LOSClear(cam_pos, root, entity.player_address)) continue;
             }
 
             Box2D box{};

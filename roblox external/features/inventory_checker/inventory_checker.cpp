@@ -71,8 +71,9 @@ namespace features {
     }
 
     void RenderInventoryChecker() {
-        if (!inventory_checker_enabled || inventory_checker_keybind == 0) return;
-        if (!(GetAsyncKeyState(inventory_checker_keybind) & 0x8000)) return;
+        if (!inventory_checker_enabled) return;
+        // no keybind set -> always show for whoever's under the cursor; otherwise hold key
+        if (inventory_checker_keybind != 0 && !(GetAsyncKeyState(inventory_checker_keybind) & 0x8000)) return;
         if (!g_base_address) return;
 
         instance ve = read<instance>(g_base_address + Offsets::VisualEngine::Pointer);

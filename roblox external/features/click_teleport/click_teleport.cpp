@@ -7,6 +7,7 @@
 #include "offsets.h"
 #include "game.h"
 #include "process.h"
+#include "overlay.hpp"
 
 namespace features {
 
@@ -35,17 +36,19 @@ namespace features {
     // usually off-centre, so we now rebuild the actual ray through the cursor using
     // the camera basis + fov, which behaves correctly in both modes.
     void RunClickTeleport() {
-        if (!click_teleport_enabled || click_teleport_keybind == 0) {
+        if (!click_teleport_enabled) {
             ct_key_held = false;
             return;
         }
 
-        bool key_down = (GetAsyncKeyState(click_teleport_keybind) & 0x8000) != 0;
-
-        // edge trigger - holding the key shouldn't teleport every tick
+        // left mouse button (no keybind): one teleport per click
+        bool key_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         if (!key_down) { ct_key_held = false; return; }
         if (ct_key_held) return;
         ct_key_held = true;
+
+        // clicks while the menu is open belong to the UI, not the game
+        if (overlay::g_state.menu_open) return;
 
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
         if (!lp.valid || !is_valid_address(lp.hrp_primitive)) return;
@@ -108,6 +111,8 @@ namespace features {
         };
 
         write_raw(lp.hrp_primitive + Offsets::Primitive::Position, target, sizeof(target));
+        // 2nd CFrame translation (0x134) re-syncs Position - write both
+        write_raw(lp.hrp_primitive + Offsets::Primitive::Position2, target, sizeof(target));
 
         float zero[3] = { 0.0f, 0.0f, 0.0f };
         write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, zero, sizeof(zero));

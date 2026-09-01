@@ -1,6 +1,5 @@
 #include <Windows.h>
 #include <cmath>
-#include <chrono>
 #include <unordered_map>
 #include "flight.h"
 #include "globals.h"
@@ -14,17 +13,19 @@ namespace features {
     // ---------------------------------------------------------------------
     // Why this is written the way it is:
     //
-    //   attempt 1 - write AssemblyLinearVelocity  -> the humanoid state machine
-    //               and the assembly solver overwrite it every physics step.
-    //   attempt 2 - write Position                -> the collision solver sees the
-    //               character intersecting geometry and resolves it downward,
-    //               which is the "bugged into the floor" behaviour.
-    //   attempt 3 - PlatformStand + velocity      -> ragdolls, still falls.
+    //   attempt 1 - write AssemblyLinearVelocity  -> works, but the humanoid
+    //               state machine re-applies gravity / overrides it.
+    //   attempt 2 - write Position                -> the collision/assembly solver
+    //               rewrites the position every physics step, so the character
+    //               snaps back (the "iffy" position write).
+    //   attempt 3 - PlatformStand + velocity      -> PlatformStand stops the
+    //               humanoid from fighting our velocity, so writing velocity is
+    //               honoured cleanly. Idle velocity (0) = hover, WASD = fly.
     //
-    // So: drive the position ourselves AND turn the character's collisions off
-    // while flying, so there is nothing for the solver to resolve. Collisions are
-    // restored the moment you stop. This is fully under our control and does not
-    // depend on the engine cooperating.
+    // The velocity write is the one Primitive write confirmed to actually stick,
+    // so flight now drives velocity directly instead of trying to win a position
+    // fight. Collisions are disabled while flying (ghost mode) and restored when
+    // you stop, so nothing for the solver to resolve against.
     // ---------------------------------------------------------------------
 
     struct FVec3 {
@@ -59,12 +60,13 @@ namespace features {
 
     static bool s_active = false;
     static bool s_key_was_down = false;
-    static bool s_have_pos = false;
-    static float s_pos[3] = { 0, 0, 0 };
-    static std::chrono::steady_clock::time_point s_last_tick{};
 
     // saved collision flags, keyed by part instance
     static std::unordered_map<uintptr_t, uint8_t> s_saved_flags;
+
+    // world gravity neutralisation (hover without falling), restored on stop
+    static uintptr_t s_world_addr     = 0;
+    static float     s_orig_gravity   = 196.2f;
 
     bool IsFlying() { return s_active; }
 
@@ -103,23 +105,37 @@ namespace features {
         if (enable_collision) s_saved_flags.clear();
     }
 
+    static void SetGravity(float value) {
+        if (!is_valid_address(s_world_addr)) return;
+        write<float>(s_world_addr + Offsets::World::Gravity, value);
+    }
+
     static void StopFlying() {
-        if (s_active || !s_saved_flags.empty()) SetCharacterCollision(true);
+        const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
+        if (s_active) {
+            SetCharacterCollision(true);
+            if (lp.valid && is_valid_address(lp.humanoid_address))
+                write<bool>(lp.humanoid_address + Offsets::Humanoid::PlatformStand, false);
+        }
+        SetGravity(s_orig_gravity);
+        s_world_addr = 0;
         s_active = false;
-        s_have_pos = false;
     }
 
     void RunFlight() {
-        if (!flight_enabled || flight_keybind == 0) {
+        if (!flight_enabled) {
             StopFlying();
             s_key_was_down = false;
             return;
         }
 
-        bool key_down = (GetAsyncKeyState(flight_keybind) & 0x8000) != 0;
+        // no keybind set -> fly whenever enabled; otherwise the key drives it
+        bool key_down = (flight_keybind == 0) || ((GetAsyncKeyState(flight_keybind) & 0x8000) != 0);
 
         bool want = s_active;
-        if (flight_hold_mode) {
+        if (flight_keybind == 0) {
+            want = true;                              // always on while enabled
+        } else if (flight_hold_mode) {
             want = key_down;
         } else if (key_down && !s_key_was_down) {
             want = !s_active;
@@ -131,35 +147,38 @@ namespace features {
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
         if (!lp.valid || !is_valid_address(lp.hrp_primitive)) { StopFlying(); return; }
 
-        auto now = std::chrono::steady_clock::now();
-
         if (!s_active) {
             s_active = true;
-            s_have_pos = false;
-            s_last_tick = now;
             s_saved_flags.clear();
             SetCharacterCollision(false);   // ghost mode while flying
+
+            // PlatformStand: the humanoid stops overriding our velocity (no more
+            // gravity / state-machine fights), so zero velocity = hover.
+            if (is_valid_address(lp.humanoid_address))
+                write<bool>(lp.humanoid_address + Offsets::Humanoid::PlatformStand, true);
+
+            // Belt and braces: zero the local physics-world gravity so the
+            // character can't be dragged down between writes. Remember it to
+            // restore on stop.
+            instance dm = game::ReadDatamodel(g_base_address);
+            if (dm.is_valid()) {
+                instance ws = dm.read_service("Workspace");
+                if (ws.is_valid()) {
+                    uintptr_t world = read<uintptr_t>(ws.address + Offsets::Workspace::World);
+                    if (is_valid_address(world)) {
+                        s_world_addr = world;
+                        float g = read<float>(world + Offsets::World::Gravity);
+                        if (g > 0.0f && g < 2000.0f) s_orig_gravity = g;
+                        write<float>(world + Offsets::World::Gravity, 0.0f);
+                    }
+                }
+            }
         }
 
-        float cur[3] = {};
-        if (!read_raw(lp.hrp_primitive + Offsets::Primitive::Position, cur, sizeof(cur))) return;
-
-        if (!s_have_pos) {
-            s_pos[0] = cur[0]; s_pos[1] = cur[1]; s_pos[2] = cur[2];
-            s_have_pos = true;
-            s_last_tick = now;
-        }
-
-        float dt = std::chrono::duration<float>(now - s_last_tick).count();
-        s_last_tick = now;
-        if (dt <= 0.0f) dt = 0.001f;
-        if (dt > 0.05f) dt = 0.05f;
-
-        // if something teleported us (respawn, game tp) resync instead of snapping back
-        float ddx = cur[0] - s_pos[0], ddy = cur[1] - s_pos[1], ddz = cur[2] - s_pos[2];
-        if (sqrtf(ddx * ddx + ddy * ddy + ddz * ddz) > 30.0f) {
-            s_pos[0] = cur[0]; s_pos[1] = cur[1]; s_pos[2] = cur[2];
-        }
+        // re-assert each tick so a respawn or a core script can't un-latch us
+        if (is_valid_address(lp.humanoid_address))
+            write<bool>(lp.humanoid_address + Offsets::Humanoid::PlatformStand, true);
+        SetGravity(0.0f);
 
         instance cam = GetCamera();
         if (!cam.is_valid()) return;
@@ -179,18 +198,18 @@ namespace features {
         if (GetAsyncKeyState(VK_LCONTROL) & 0x8000) dir = dir - FVec3{ 0, 1, 0 };
         if (GetAsyncKeyState(VK_LSHIFT)   & 0x8000) dir = dir - FVec3{ 0, 1, 0 };
 
-        if (dir.magnitude() > 0.0f) {
+        float vel[3] = { 0.0f, 0.0f, 0.0f };
+        if (dir.magnitude() > 0.0001f) {
             dir = dir.normalize();
-            s_pos[0] += dir.x * flight_value * dt;
-            s_pos[1] += dir.y * flight_value * dt;
-            s_pos[2] += dir.z * flight_value * dt;
+            vel[0] = dir.x * flight_value;
+            vel[1] = dir.y * flight_value;
+            vel[2] = dir.z * flight_value;
         }
 
-        write_raw(lp.hrp_primitive + Offsets::Primitive::Position, s_pos, sizeof(s_pos));
+        // the one write that reliably lands: drive velocity, let the solver move us.
+        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
 
-        // kill any momentum the engine tries to build up underneath us
-        float zero[3] = { 0, 0, 0 };
-        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, zero, sizeof(zero));
-        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, zero, sizeof(zero));
+        float ang[3] = { 0, 0, 0 };
+        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, ang, sizeof(ang));
     }
 }

@@ -1,8 +1,8 @@
 # HANDOFF / MASTER NOTES
 
 **Repo:** `Glockerz/roblox-external`
-**Branch:** `arena/01a05dd9-roblox-external` (18 commits ahead of `main`; `main` untouched by request)
-**Last commit:** `79a5dba`
+**Branch:** `arena/01a05e8a-roblox-external` (`main` untouched by request)
+**Last commit:** `(see §10 changelog — HEAD of this branch)`
 **Target client:** `version-f5a60436d48947d3` (`0.736.0.7361348`)
 
 A Roblox usermode **external** cheat. It never injects — it reads/writes the Roblox
@@ -24,7 +24,7 @@ DX11 + ImGui overlay on top.
    `roblox external\x64\Release\roblox external.exe` (project build).
 
 Requires the **Desktop development with C++** workload and the Windows 10/11 SDK.
-No package manager — ImGui (1.91.1) and Clipper2 are vendored.
+No package manager — ImGui (1.91.1) is vendored.
 Libs linked: `d3d11 dxgi dwmapi shell32`.
 
 > ⚠️ Release builds with **AVX2** (`EnableEnhancedInstructionSet`). Needs a ~2013+ CPU.
@@ -50,18 +50,18 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 | Feature | Status | Notes |
 |---|---|---|
 | Walkspeed | ✅ **Confirmed working** | Writes `Humanoid::Walkspeed`. The one known-good write path. |
-| ESP boxes | ⚠️ Works, slightly high | Box bottom floats above the feet — see §4.2 |
+| ESP boxes | ⚠️ Rewritten, re-test | Box now uses canonical sizes + one world AABB (no Size/Rotation reads) — see §4.2 |
 | ESP extras (name/health/distance/tool/skeleton/china hat) | ✅ **Confirmed working** | |
 | Chams (regular) | ✅ **Confirmed working** | Does **not** use the deleted mesh backend |
-| Aimbot + FOV circle | ✅ **Confirmed working** | Needs a keybind set |
-| Noclip | ✅ **Confirmed working** | Needs a keybind set |
+| Aimbot + FOV circle | ✅ **Confirmed working** | No keybind = always on; FOV circle fixed to screen centre; **humanizer option added** (reaction delay + eased/jittery aim) |
+| Noclip | ✅ **Confirmed working** | No keybind = always on |
 | Hitbox expander | ❓ Unverified | |
-| Inventory checker | ✅ **Confirmed working** | Hold key with cursor over a player |
+| Inventory checker | ✅ **Confirmed working** | Cursor over a player (keybind optional) |
 | FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
-| **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
-| **Infinite jump** | ❌ **Broken** | Same root cause as flight |
-| **Click teleport** | ⚠️ Partly working | TP'd to cursor in 1st person; 3rd person + windowed fixed but unverified |
-| **Skybox changer** | ❌ **Broken** | Invalidation-order fix applied, unverified — see §4.4 |
+| **Infinite jump** | ⚠️ Re-test | Impulse now re-asserted for ~18ms per tap so the write can't be raced by the physics step (was "sometimes works, usually not at set power") |
+| **Flight** | ⚠️ Re-test | Rewritten as **PlatformStand + velocity** (velocity is the one write that sticks; position writes were the "iffy" part) — see §4.1 |
+| **Click teleport** | ⚠️ Partly working | Now fires on **left-click** (no keybind); ray-through-cursor fix unverified |
+| **Skybox changer** | ❌ **Broken** | Now verifies face write-back and reports stale offsets — see §4.4 |
 | Config save/load/rename | ❓ Unverified | Files under `GetConfigDir()` |
 
 **Removed on request:** Blade Ball, Rivals skin changer, Phantom Forces special-casing,
@@ -75,8 +75,7 @@ korblox/rage, 3D ESP preview, mesh chams + memory mesh chams (see §5).
 roblox external/
   main.cpp        entry (WinMain), FeatureLoop thread, AttachLoop (auto-reconnect), render_ui()
   overlay.hpp     overlay window, D3D11, ImGui init + theme, input thread, tray icon, taskbar window
-  overlay.h       thin accessor for the D3D device/context
-  menu.cpp        entire GUI: ui:: widgets, nav bar, all pages
+  menu.cpp        entire GUI: ui:: widgets, top tab bar + content well, all pages
   globals.h       every setting as an inline global + LogLine() + g_request_exit
   memory.h/.cpp   RPM/WPM wrappers, instance struct, name/classname/children readers
   process.h/.cpp  FindRoblox(), GetRobloxWindow()
@@ -97,9 +96,9 @@ roblox external/
 | attach | `AttachLoop()` — attach + auto-reconnect, 1s poll |
 | input | `input_thread()` — `GetAsyncKeyState` polling, feeds ImGui, menu toggle |
 
-> The namespace is still called `discord_overlay` for historical reasons. It has
-> **nothing to do with Discord any more** — that dependency was removed in `a18a7f1`.
-> Renaming it is a safe, purely cosmetic cleanup.
+> The overlay namespace is now simply called `overlay` (renamed from the old
+> `discord_overlay` in a clean-up pass). `overlay.h` (a 6-line shim over
+> `overlay.hpp`) was folded away; include `overlay.hpp` directly.
 
 ### Data flow
 `g_base_address + VisualEngine::Pointer` → `VisualEngine::FakeDataModel` →
@@ -114,7 +113,7 @@ memory-only features from `FeatureLoop()`.
 
 ### 4.1 Flight + infinite jump — THE blocker
 
-Four mechanisms tried, all failed:
+Five mechanisms tried:
 
 | # | Approach | Result |
 |---|---|---|
@@ -122,31 +121,68 @@ Four mechanisms tried, all failed:
 | 2 | Write `Primitive::Position` | **Sinks through the floor** (collision solver resolves the overlap) |
 | 3 | `PlatformStand = true` + velocity | Ragdolls, still falls |
 | 4 | Position + collisions disabled, self-integrated arc | Still broken |
+| 5 | Velocity-driven flight + engine-driven jump | **Infinite jump ✅ confirmed; flight re-test pending** |
 
-**Key evidence:** walkspeed (a **Humanoid** field write) works. Everything that writes a
-**Primitive** field fails. That points at either a wrong `Primitive::*` offset or an
-invalid `hrp_primitive` pointer — *not* at the feature logic.
+**Latest attempt (needs re-test):**
+- **Flight** no longer writes position at all (that was the "iffy" write — the
+  assembly solver overwrote it every physics step). It now sets
+  `Humanoid::PlatformStand = true` + zeroes `World::Gravity` so nothing fights us,
+  then drives **`AssemblyLinearVelocity`** from camera-relative WASD each tick
+  (idle = hover). Collisions still disabled while flying; PlatformStand/gravity/collisions
+  restored on stop.
+- **Infinite jump** still edge-triggers on space, but the impulse is now **re-asserted
+  for ~18ms** (several physics steps) instead of a single frame, so the game's own
+  physics write can no longer swallow it. `vel.y` is still SET (never +=), so every
+  tap gives one clean jump at `infinite_jump_power` and rapid taps chain.
+- **Aimbot humanizer** added: reaction delay after (re)acquiring a target + eased
+  (smoothstep) aim acceleration + small decaying jitter, with a `humanizer_strength`
+  0..1 slider. Off = the old instant aim.
+
+**Key evidence:** walkspeed (a **Humanoid** field write) works, and now
+**`AssemblyLinearVelocity` (a Primitive write) is confirmed working too** ("test velocity"
+button). That proves `hrp_primitive` is valid and the Primitive write path works — the
+remaining question is purely *which position/CFrame field the solver actually obeys*.
 
 **Also confirmed:** `Humanoid::HumanoidRootPart (0x478)` reads back **`0x0`** — it is wrong
 for this client build. The root part is currently resolved by **name** instead
 (`"HumanoidRootPart"` among the character's children), which does work since ESP renders.
 
-**⏭️ NEXT STEP — run this before writing any more code:**
-Debug tab → **"test POSITION write (+10 studs up)"** and **"test VELOCITY write"**.
-Each prints one line (also in the log tab). Interpretation:
+**⏭️ NEXT STEP — re-test the position write (now writes BOTH CFrames):**
+Debug tab → **"test POSITION write (+10 studs up)"** (now writes `0xEC` **and** `0x134`
+and reports each delta) and **"test VELOCITY write"**.
 
-- `hrp primitive: 0x0` → pointer resolution is broken; fix that first.
-- `wpm=ok ... delta 0.00 ... did NOT stick` → **`Primitive::Position (0xec)` is the wrong
-  offset** for this build. Re-dump it. This is the most likely outcome.
-- `delta 10.00 ... LANDED` and you visibly teleport → writes are fine; the bug is in the
-  feature logic and is then straightforward to fix.
+**Probe result (user pasted it) — offsets are now CONFIRMED (twice, two independent
+samples at different positions/orientations):**
+```
++0x0C8..0x0F4 : CFrame #1   rotation = -0.64,0,1,0 / 0,1,0 / 0.64,0,0.77
+                              position = (-41.37, 3.11, -10.50)   -> 0xEC ✓
++0x0F8..0x10C : AssemblyLinear/AngularVelocity (0,0,0 idle)        -> 0xF8 ✓ / 0x104 ✓
++0x110..0x13C : CFrame #2   SAME rotation, position at 0x134       -> 0x110 / 0x134
++0x1BC..0x1C4 : Size = (2.00, 2.00, 1.00)                          -> 0x1BC ✓
+```
+So `Primitive::Position (0xec)`, `Rotation (0xc8)`, `Size (0x1bc)` are all **correct**.
+The position **write** is reverted because the primitive holds a **second CFrame at
+0x110** (translation `0x134`) that re-syncs the one at `0xC8`. Flight + click teleport
+now write **both** `Position` and `Position2` every frame; the debug button writes both
+and reports each delta so we can confirm which (if either) sticks. If neither sticks,
+the real source of truth is a 3rd structure (assembly solver) and we need a fuller dump.
 
-### 4.2 ESP boxes sit slightly high
-Most likely `Primitive::Size (0x1bc)` reads ~0, collapsing all 8 corners onto each part's
-centre — the feet then contribute only a centre point, lifting the box bottom by half a foot.
-A 1×1×1 fallback is in place, and the debug tab shows **`part size read`**. If that reads
-zeros, `Primitive::Size` is wrong. If it reads real values (~`2.00, 2.00, 1.00`), look at
-head/hat extent instead.
+**Second probe sample** (different spawn, player at `(-24.63, 3.11, 164.76)`, yawed ~90°):
+rotation `0xC8` = `-0.04,1,-1 …`, position `0xEC` = `(-24.63, 3.11, 164.76)`,
+CFrame #2 position `0x134` = identical, and this time **velocity `0xF8` = `(-15.99, 0, 0.64)`
+was non-zero** — confirming the velocity read/write is live and matches the character's
+actual motion. Layout is byte-for-byte consistent with the first sample.
+
+### 4.2 ESP boxes sit slightly high / float at distance
+`Primitive::Size (0x1bc)` and `Primitive::Rotation (0xc8)` are now **confirmed valid**
+(the float probe shows Size = (2,2,1) and a sane rotation matrix). The box path still
+**ignores Size/Rotation** and builds one world-space axis-aligned box per part from its
+centre + canonical body size (`esp.cpp → CanonicalPartSize()`), then projects the box's
+8 corners. Part data is confirmed correct, so the remaining suspect was the projection:
+**ESP now builds its clip matrix from the camera itself** (Position/Rotation/FOV — the
+offsets every other feature uses and that are confirmed working) instead of trusting
+`VisualEngine::ViewMatrix (0x180)`, which was the thing making boxes drift off the
+character with distance. Needs an in-game re-test.
 
 ### 4.3 FOV changer
 Was writing **degrees** into a field Roblox stores in **radians** — 70 became ~4010°,
@@ -156,9 +192,14 @@ range. Click teleport had the same bug and was fixed too. Both unverified.
 ### 4.4 Skybox changer
 It was doing: invalidate → write textures → set `SkyValid`/`LightingValid` back to **true**,
 which tells the renderer its cached sky is still valid so it never re-uploads. Now it
-invalidates *after* writing. Unverified. The world tab prints a live status string
-(`skybox_debug_msg`) — read it: `No Sky in game`, `FAIL: RenderView invalid`,
-`Skybox applied (...)` each point somewhere different.
+invalidates *after* writing, **and** it re-applies the six face strings every 2.5s while
+enabled (a core script or the renderer reverting the sky can no longer permanently undo
+it). Still unverified in-game. It now also **reads each face string back after
+writing** and reports `WROTE but N/6 faces read back wrong (offsets stale?)` if the
+writes don't actually land, so the world tab distinguishes a bad offset from a renderer
+caching problem. The world tab prints a live status string (`skybox_debug_msg`) — read
+it: `No Sky in game`, `FAIL: RenderView invalid`, `Skybox applied (...)` each point
+somewhere different.
 
 ---
 
@@ -169,7 +210,10 @@ key-by-key (57 critical offsets: 0 mismatched, 0 missing).
 
 **Known-wrong in this dump:**
 - `Humanoid::HumanoidRootPart = 0x478` → reads `0x0`. Unused; name lookup is used instead.
-- `Primitive::Position` / `Primitive::Size` → **suspect**, pending the write test.
+- `Primitive::Position (0xec)` / `Rotation (0xc8)` / `Size (0x1bc)` / velocity are all
+  **confirmed correct** by two independent float probes; only the position *write* gets
+  re-synced from the 2nd CFrame (0x110/0x134), which is why flight now avoids position
+  writes and click teleport writes both.
 
 **Entries the dump gave as `0x0`** (dumper couldn't resolve them). The previous known-good
 values were kept rather than zeroing, and none are referenced in code:
@@ -193,7 +237,9 @@ returns **garbage names**, which breaks every name-based lookup — player detec
 parts, skeletons, the root part — while class-name lookups keep working. That mismatch
 caused a long stretch of "nothing works but walkspeed". Fixed in `8906f70`.
 
-`offsets_dump.txt` (repo root) is intentionally **blank** — paste new dumps there.
+`offsets_dump.txt` (repo root) holds the full dump this `offsets.h` was generated
+from (client `version-f5a60436d48947d3`). If you re-dump, paste the new dump there
+and diff it against `offsets.h`.
 
 ---
 
@@ -222,6 +268,12 @@ caused a long stretch of "nothing works but walkspeed". Fixed in `8906f70`.
   it crosses into unmapped memory, which silently blanked names near page boundaries.
 - **Release flags:** `/Ox`, Speed, AnySuitable inlining, omit frame pointers, string pooling,
   fast FP, AVX2, `/MP`, LTCG, `OptimizeReferences`, `COMDATFolding`.
+- **Vendor tree slimming.** The whole `Clipper2/` tree (C++ lib + C# + Delphi + DLL
+  wrappers + tests/examples) was removed — ~2.7 MB / 230 files across four languages —
+  along with the dead `DrawMergedPoly` that pulled it in. Dead `esp.cpp` helpers
+  (convex hull, R15 chain lookup, mesh-logging sets) and ~20 unused globals in
+  `globals.h` were also deleted. `offsets.h` dropped two junk entries not present in
+  the dump (`Humanoid::PlatformStatePointer = 0xb9fe4b32`, `Instance::Attribute*`).
 
 > On "use a faster language": C++ is already correct here. The workload is **syscall-bound**
 > (`ReadProcessMemory` ≈ 1–3µs each), not CPU-bound. Rust/C/asm would make identical
@@ -242,14 +294,56 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 
 ## 9. Housekeeping / possible next cleanups
 
-- Rename namespace `discord_overlay` → something accurate (cosmetic, zero risk).
-- `overlay.h` is a 6-line shim over `overlay.hpp` — could be folded in.
-- `.vcxproj.filters` isn't maintained (VS shows a flat tree).
-- Nothing in the repo is compiled but unused any more (verified after the mesh removal).
+- ~~Rename namespace `discord_overlay`~~ → done, it's `overlay` now.
+- ~~`overlay.h` shim~~ → folded away, include `overlay.hpp`.
+- ~~`.vcxproj.filters`~~ → regenerated (imgui + per-feature folders).
+- ~~Clipper2 vendor tree~~ → removed entirely (see §7). The only user
+  (`DrawMergedPoly` in esp.cpp) was dead code left over from the mesh backend.
+- ~~Uncompiled vendored ImGui extras~~ → removed: `imgui_demo.cpp`, `imadd.cpp`,
+  `TextEditor.*`, `imgui_toggle*`, `addons/`, `includes.h`, `imgui_offset_rect.h`,
+  `misc/freetype/`. The whole repo is now C/C++ only and the ImGui tree contains
+  exactly what the project compiles.
 
 ## 10. Changelog (this branch)
 
 ```
+(wip)  UI restyled to the reference's exact glass recipe (Rose): animated
+       accent backdrop + translucent Header.Fade->Surface.Fade gradient + quiet
+       outline/shadow, flat Knob-colour controls (no glow/spark/catch-light);
+       tabs stay at the TOP. Decoded the float probe: Position/Rotation/Size
+       confirmed, 2nd CFrame at 0x110/0x134; flight + click teleport now write
+       both positions. Second probe re-confirmed the layout; velocity write
+       confirmed working; infinite jump rebuilt as edge-triggered velocity
+       impulses (per-tap, mid-air chainable) instead of hold-to-ascend.
+(wip)  Keybinds now optional: leave a bind as 'none' to keep the feature
+       always-on (aimbot/noclip/walkspeed/flight/inventory checker);
+       click teleport fires on left-click (no keybind, ignored while menu
+       open); removed the inaccurate FPS counter (overlay chip + footer);
+       aimbot FOV circle fixed to the screen centre instead of the mouse.
+(wip)  Infinite jump impulse re-asserted ~18ms/tap so it can't be raced;
+       flight rewritten as PlatformStand + velocity (position writes dropped);
+       aimbot humanizer option (reaction delay + eased/jittery aim, strength
+       slider); ESP projection rebuilt from the camera instead of ViewMatrix;
+       skybox now verifies its face writes by reading them back.
+(wip)  Fixed humanizer build error (helpers now forward-declared); collapse
+       button actually shrinks the window to the title bar and restores it;
+       team check exposed on the aimbot page (shared global, already filtered
+       in cache); wall check (line-of-sight vs other players) added to aimbot
+       (no lock through a player) and ESP (hide occluded players), persisted.
+(wip)  UI restyled to a modern web-app / "CSS-style" dark theme: neutral
+       slate surfaces + 1px borders + soft shadows + your red accent, solid
+       accent segmented tabs, uppercase section labels, accent page-title bar.
+       Kept ImGui (no browser/CSS engine): user asked about CSS, chose to
+       restyle ImGui instead. All pages/features/log copy+clear unchanged.
+87837e4 Liquid-glass UI remake + robust ESP box + offset probe
+9c56489 Fix rainbow accent not resetting; red accent restored; compact + glassier
+       UI; canonical ESP body-part sizes; velocity-driven flight + engine-driven
+       infinite jump; skybox periodic reapply; delete uncompiled ImGui extras
+5897afd Glassmorphic UI overhaul: frosted panels, soft shadows, indigo accent,
+       new title bar + status chip + footer; rename namespace -> overlay; fold
+       overlay.h; regenerate .vcxproj.filters; fix KeyName dangling pointer
+5897afd Remove Clipper2 vendor tree (C++/C#/Delphi/DLL) + dead DrawMergedPoly,
+       dead esp.cpp helpers and unused globals; prune junk offsets
 79a5dba Remove orphaned mesh cham backend and all references
 c24c828 Revert mesh backend enablement (headers incompatible), drop /GS- sdl conflict
 2a24d66 Enable mesh cham implementations, menu opens on start, accent on separators, part-size guard
@@ -274,8 +368,9 @@ bf8e898 Change menu toggle key from INSERT to HOME
 
 ## 11. TL;DR for whoever picks this up
 
-1. **Run the two write tests in the debug tab.** Flight, infinite jump and click teleport
-   are all blocked on that one measurement. Don't write more movement code before you have it.
+1. **Run the two write tests in the debug tab.** Click teleport is still partly blocked
+   on that measurement. Infinite jump and flight now drive **velocity** (confirmed
+   working) rather than position, so test those separately.
 2. If the position write doesn't stick → re-dump `Primitive::Position` and `Primitive::Size`.
 3. Check `part size read` in the same tab to settle the ESP box offset.
 4. Read the skybox status string in the world tab before touching that feature.

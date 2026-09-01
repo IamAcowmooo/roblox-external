@@ -27,25 +27,9 @@
 void RenderMenu();
 void TickKeybinds();
 
-namespace discord_overlay {
+namespace overlay {
     void render_ui() {
         TickKeybinds();
-
-        {
-            static float fps_timer = 0;
-            static int frame_count = 0;
-            static float current_fps = 0;
-            frame_count++;
-            float now = (float)ImGui::GetTime();
-            if (now - fps_timer >= 1.0f) {
-                current_fps = (float)frame_count / (now - fps_timer);
-                frame_count = 0;
-                fps_timer = now;
-            }
-            char fps_buf[32];
-            sprintf_s(fps_buf, "fps: %.0f", current_fps);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 10), IM_COL32(255, 255, 255, 255), fps_buf);
-        }
 
         if (esp_enabled) {
             features::RenderESP();
@@ -152,9 +136,9 @@ _Use_decl_annotations_ int WINAPI WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lpC,
     CreateThread(nullptr, 0, [](LPVOID) -> DWORD { FeatureLoop(); return 0; }, nullptr, 0, nullptr);
     CreateThread(nullptr, 0, AttachLoop, nullptr, 0, nullptr);
 
-    discord_overlay::run();
+    overlay::run();
 
     cache::StopThread();
-    discord_overlay::shutdown();
+    overlay::shutdown();
     return 0;
 }

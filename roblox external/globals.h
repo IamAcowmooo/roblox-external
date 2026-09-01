@@ -41,6 +41,11 @@ inline float smoothing_y = 4.0f;
 inline float fov_size = 150.0f;
 inline bool show_fov = false;
 
+// humanizer: reaction delay + eased/curved aim + a little decaying jitter so the
+// aimbot moves like a person instead of snapping instantly.
+inline bool humanizer_enabled = false;
+inline float humanizer_strength = 0.5f;   // 0..1
+
 inline bool esp_enabled = false;
 inline bool box_esp = false;
 inline int box_esp_type = 0;
@@ -92,8 +97,8 @@ inline float fov_value = 70.0f;
 
 // ---- ui customisation (ui page) ----
 inline float ui_transparency = 6.0f;
-inline bool  ui_rounded_corners = false;
-inline float ui_corner_radius = 0.0f;
+inline bool  ui_rounded_corners = true;
+inline float ui_corner_radius = 16.0f;
 inline bool  ui_rainbow = false;
 inline float ui_accent_color[3] = { 0.78f, 0.08f, 0.08f };
 
@@ -118,66 +123,7 @@ inline char skybox_debug_msg[256]{};
 
 
 
-inline bool skeleton = false;
-inline float menu_alpha = 1.0f;
-
-inline bool menu_open = false;
-
-struct {
-    bool centered_once = false;
-} inline g_state;
-
-namespace theme {
-    inline float menu_size[2] = { 520.0f, 480.0f };
-    inline float topbar_h = 30.0f;
-    inline float out_thick = 1.0f;
-    inline unsigned int topbar_grad_t = 0xFF1A1A2E;
-    inline unsigned int topbar_grad_b = 0xFF16162B;
-    inline unsigned int topbar_inline = 0xFF2A2A4A;
-    inline unsigned int accent_border = 0xFF6C63FF;
-    inline unsigned int menu_text = 0xFFD4D4E8;
-    inline unsigned int col_alpha(unsigned int c, int a) {
-        return (c & 0x00FFFFFF) | (((unsigned int)a << 24));
-    }
-}
-
-inline bool box_fade = false;
-inline float box_fade_timer = 10.0f;
-
-inline float health_bar_width = 3.0f;
-inline float health_bar_gap = 3.0f;
-
-inline float text_spacing = 2.0f;
-
-inline int text_font = 0;
-
-inline int max_distance = 2000;
-
 inline bool team_check = false;
-
-inline bool alive_check = true;
-
-inline bool show_name = true;
-
-inline bool show_distance = true;
-
-inline bool show_health = true;
-
-inline bool show_tool = true;
-
-inline bool show_rig = true;
-
-inline bool show_skeleton = true;
-
-inline bool show_box = true;
-
-inline bool show_chams = true;
-
-
-inline bool show_chinahat = true;
-
-inline bool show_aimbot_fov = true;
-
-inline bool show_expanded_hitbox = true;
-
-inline bool show_aim_viewer = true;
+// line-of-sight check: aimbot won't lock / ESP won't draw targets blocked by
+// another player's body (true world-geometry walls need the primitives list)
+inline bool wall_check = false;
