@@ -51,13 +51,13 @@ Honest state. "Unverified" = written and wired, never confirmed working in-game.
 |---|---|---|
 | Walkspeed | ✅ **Confirmed working** | Writes `Humanoid::Walkspeed`. The one known-good write path. |
 | ESP boxes | ⚠️ Works, slightly high | Box bottom floats above the feet — see §4.2 |
-| ESP extras (name/health/distance/tool/skeleton/china hat) | ❓ Unverified | |
-| Chams (regular) | ❓ Unverified | Does **not** use the deleted mesh backend |
-| Aimbot + FOV circle | ❓ Unverified | Needs a keybind set |
-| Noclip | ❓ Unverified | Needs a keybind set |
+| ESP extras (name/health/distance/tool/skeleton/china hat) | ✅ **Confirmed working** | |
+| Chams (regular) | ✅ **Confirmed working** | Does **not** use the deleted mesh backend |
+| Aimbot + FOV circle | ✅ **Confirmed working** | Needs a keybind set |
+| Noclip | ✅ **Confirmed working** | Needs a keybind set |
 | Hitbox expander | ❓ Unverified | |
-| Inventory checker | ❓ Unverified | Hold key with cursor over a player |
-| FOV changer | ❓ Unverified since fix | Radians bug fixed — see §4.3 |
+| Inventory checker | ✅ **Confirmed working** | Hold key with cursor over a player |
+| FOV changer | ✅ **Confirmed working** | Radians bug fixed — see §4.3 |
 | **Flight** | ❌ **Broken** | 4 approaches tried — see §4.1 |
 | **Infinite jump** | ❌ **Broken** | Same root cause as flight |
 | **Click teleport** | ⚠️ Partly working | TP'd to cursor in 1st person; 3rd person + windowed fixed but unverified |
