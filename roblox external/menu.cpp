@@ -554,6 +554,7 @@ static void PageDebug(const obs::Palette& pal) {
 
     const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
     KVC("local player", lp.valid ? &pal.ok : &pal.danger, "%s", lp.valid ? "ok" : "INVALID");
+    if (lp.name[0]) KV("username", "%s", lp.name);
     KV("humanoid", "0x%llX", (unsigned long long)lp.humanoid_address);
     KVC("hrp primitive", is_valid_address(lp.hrp_primitive) ? &pal.text : &pal.danger,
         "0x%llX", (unsigned long long)lp.hrp_primitive);
@@ -681,11 +682,17 @@ void RenderMenu() {
     obs::ApplyTheme(pal, obs::ActiveConfig());
 
     // title-bar status read-out (buffer is static; the window borrows it)
-    if (g_base_address)
-        snprintf(s_status_text, sizeof(s_status_text),
-                 "attached \xc2\xb7 pid %u", (unsigned)mem::process_id.load());
-    else
+    const cache::LocalPlayerData& lp_status = cache::GetLocalPlayer();
+    if (g_base_address) {
+        if (lp_status.name[0])
+            snprintf(s_status_text, sizeof(s_status_text), "attached \xc2\xb7 %s \xc2\xb7 pid %u",
+                     lp_status.name, (unsigned)mem::process_id.load());
+        else
+            snprintf(s_status_text, sizeof(s_status_text),
+                     "attached \xc2\xb7 pid %u", (unsigned)mem::process_id.load());
+    } else {
         snprintf(s_status_text, sizeof(s_status_text), "waiting for roblox");
+    }
 
     obs::ObsidianWindow& win = MenuWindow();
     win.Config().subtitle_tint = g_base_address ? pal.ok : pal.warn;
@@ -721,10 +728,16 @@ void RenderMenu() {
         // footer status line
         {
             char left[96], right[96];
-            if (g_base_address)
-                snprintf(left, sizeof(left), "attached  pid %u", (unsigned)mem::process_id.load());
-            else
+            if (g_base_address) {
+                if (lp_status.name[0])
+                    snprintf(left, sizeof(left), "attached \xc2\xb7 %s \xc2\xb7 pid %u",
+                             lp_status.name, (unsigned)mem::process_id.load());
+                else
+                    snprintf(left, sizeof(left), "attached  pid %u",
+                             (unsigned)mem::process_id.load());
+            } else {
                 snprintf(left, sizeof(left), "waiting for roblox...");
+            }
             snprintf(right, sizeof(right), "%s toggles menu", KeyName(menu_toggle_keybind));
 
             const ImVec4 col = obs::Fade(pal.text_faint, pal.TextAlphaScale());

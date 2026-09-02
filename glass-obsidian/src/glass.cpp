@@ -1362,20 +1362,24 @@ bool TabBarImpl(const char* id, const char* const* labels, const IconDrawFn* ico
     ImGui::PushID(id);
 
     // invisible native buttons in a natural horizontal row
-    struct Slot { ImVec2 a, b; bool hov, act, foc; ImGuiID id; };
+    struct Slot { ImVec2 a, b; bool hov, foc, pressed; ImGuiID id; };
     Slot slots[32];
     for (int i = 0; i < count; ++i) {
         if (i) ImGui::SameLine(0.0f, 0.0f);
         ImGui::PushID(i);
         BeginInvisible();
-        ImGui::Button("##tab", ImVec2(widths[i], bar_h));
+        // Use Button's own return value for the click: sampling IsItemActive()
+        // afterwards is always false on the release frame, because
+        // ButtonBehavior() calls ClearActiveID() while processing the release -
+        // which made tabs impossible to switch by clicking.
+        const bool pressed = ImGui::Button("##tab", ImVec2(widths[i], bar_h));
         EndInvisible();
         slots[i].a   = ImGui::GetItemRectMin();
         slots[i].b   = ImGui::GetItemRectMax();
         slots[i].hov = ImGui::IsItemHovered();
-        slots[i].act = ImGui::IsItemActive();
         slots[i].foc = ImGui::IsItemFocused();
         slots[i].id  = ImGui::GetItemID();
+        slots[i].pressed = pressed;
         ImGui::PopID();
     }
 
@@ -1446,7 +1450,7 @@ bool TabBarImpl(const char* id, const char* const* labels, const IconDrawFn* ico
 
     bool changed = false;
     for (int i = 0; i < count; ++i)
-        if (slots[i].act && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && i != *selected) {
+        if (slots[i].pressed && i != *selected) {
             *selected = i; changed = true;
         }
 

@@ -222,6 +222,10 @@ namespace cache {
         if (!plrs.is_valid()) return lp;
         instance local = plrs.local_player();
         if (!local.is_valid()) return lp;
+        // the LocalPlayer instance is named after the account - the same source
+        // the esp uses for other players - so the menu can show the username
+        // even before the character resolves
+        scpy(lp.name, local.get_name().c_str(), sizeof(lp.name));
         instance ch = local.model_instance();
         if (!ch.is_valid()) return lp;
         lp.valid = true;

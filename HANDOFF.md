@@ -316,6 +316,16 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
+(wip)  Tab bar fixed: tabs could not be switched by clicking. TabBarImpl
+       sampled IsItemActive() AFTER ImGui::Button(), but ButtonBehavior()
+       calls ClearActiveID() while processing the release - so the
+       act+IsMouseReleased test was never true. Now uses Button's own return
+       value (verified headlessly: x-sweep across the tab strip selects every
+       tab correctly). Red highlight that wiggled while dragging the menu
+       was ImGui nav-highlight (themed red) - keyboard/gamepad nav is now
+       left OFF (the theme default); text inputs are click-to-focus anyway.
+       Username added next to the pid: LocalPlayerData carries the account
+       name now (title-bar subtitle, footer, debug page).
 (wip)  GUI swapped to Glass Obsidian (../glass-obsidian): the hand-rolled ui::
        toolkit, custom title bar, tab pill and window-sizing preamble are gone.
        menu.cpp now drives one obsidian::ObsidianWindow (collapse-safe resize,

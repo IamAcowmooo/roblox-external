@@ -496,10 +496,14 @@ namespace overlay
         ImGui::CreateContext();
 
         ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
+        // NOTE: keyboard/gamepad nav stays OFF (the theme default). With nav
+        // armed, ImGui draws NavHighlight - the accent colour, i.e. red - around
+        // the nav-focused item, which reads as a red box flickering around the
+        // title bar while you drag the window. Nothing here needs arrow-key
+        // navigation: text inputs are click-to-focus and typing reaches ImGui
+        // through AddInputCharacter in the input thread.
         obsidian::ThemeConfig cfg;
-        cfg.nav_keyboard = true;
         if (!obsidian::LoadFonts(cfg))
             LogLine("glass obsidian: no system font found, using the built-in fallback");
         obsidian::ApplyTheme(obsidian::PaletteCrimson(), cfg);

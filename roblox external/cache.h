@@ -45,6 +45,7 @@ namespace cache {
         float x = 0, y = 0, z = 0;
         uintptr_t hrp_primitive = 0;
         uintptr_t humanoid_address = 0;
+        char name[64]{};   // account username (the LocalPlayer instance's name)
     };
 
     // Zero-copy snapshots. The cache thread publishes a new immutable vector each
