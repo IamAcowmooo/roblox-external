@@ -11,6 +11,7 @@
 #include "cache.h"
 #include "offsets.h"
 #include "game.h"
+#include "process.h"
 #include "imgui/imgui.h"
 
 namespace features {
@@ -140,6 +141,64 @@ namespace features {
         return true;
     }
 
+    // ---------------------------------------------------------------------
+    // Roblox renders into its window's CLIENT area, so everything WorldToScreen
+    // produces is in client-space pixels. Our ImGui overlay, however, is a
+    // full-screen window anchored at the desktop origin (0,0). If the game is
+    // windowed (or has a title bar / borders / is on a scaled display) the two
+    // coordinate systems differ by the client-area origin, plus a scale factor
+    // when the backbuffer Dimensions don't match the client rect in pixels.
+    //
+    // That offset is CONSTANT in pixels, which is exactly why the bug only
+    // looked broken "at long distance": up close the player fills a few hundred
+    // pixels so a ~30px vertical shift is barely noticeable, but far away the
+    // character is only a handful of pixels tall, so the same 30px shift parks
+    // the whole box/name above their head.
+    //
+    // Convert client-space -> desktop-space before drawing.
+    struct OverlayTransform {
+        float offset_x = 0.0f;
+        float offset_y = 0.0f;
+        float scale_x  = 1.0f;
+        float scale_y  = 1.0f;
+    };
+
+    static OverlayTransform cached_transform{};
+    static DWORD last_transform_lookup = 0;
+
+    static const OverlayTransform& GetOverlayTransform(const Vec2& viewport) {
+        DWORD now = GetTickCount();
+        // refresh often enough to follow window drags/resizes without hammering
+        // the win32 API every projected point.
+        if ((now - last_transform_lookup) < 250 && last_transform_lookup != 0)
+            return cached_transform;
+        last_transform_lookup = now;
+
+        OverlayTransform t{};
+        HWND rbx = process::GetRobloxWindow();
+        if (rbx) {
+            RECT client{};
+            POINT origin{ 0, 0 };
+            if (GetClientRect(rbx, &client) && ClientToScreen(rbx, &origin)) {
+                float client_w = (float)(client.right - client.left);
+                float client_h = (float)(client.bottom - client.top);
+                if (client_w > 0.0f && client_h > 0.0f) {
+                    t.offset_x = (float)origin.x;
+                    t.offset_y = (float)origin.y;
+                    // Dimensions is the render target size; if it differs from
+                    // the client rect (DPI scaling / resolution scaling) map
+                    // between them instead of assuming 1:1.
+                    if (viewport.x > 0.0f && viewport.y > 0.0f) {
+                        t.scale_x = client_w / viewport.x;
+                        t.scale_y = client_h / viewport.y;
+                    }
+                }
+            }
+        }
+        cached_transform = t;
+        return cached_transform;
+    }
+
     static bool WorldToScreen(const Vec3& world, Vec2& out, const Matrix4& view, const Vec2& viewport) {
         const float* m = view.data;
         float w_x = world.x * m[12] + world.y * m[13] + world.z * m[14] + m[15];
@@ -150,6 +209,11 @@ namespace features {
         out.x = (viewport.x * 0.5f * screen_x * inv_w) + (viewport.x * 0.5f);
         out.y = -(viewport.y * 0.5f * screen_y * inv_w) + (viewport.y * 0.5f);
         if (out.x != out.x || out.y != out.y) return false;
+
+        // client-space -> overlay/desktop-space
+        const OverlayTransform& t = GetOverlayTransform(viewport);
+        out.x = out.x * t.scale_x + t.offset_x;
+        out.y = out.y * t.scale_y + t.offset_y;
         return true;
     }
 
@@ -461,8 +525,16 @@ namespace features {
         }
     }
 
+    // NOTE: points coming out of WorldToScreen are already in overlay/desktop
+    // space, so the visible rect has to be transformed the same way rather than
+    // compared against the raw render dimensions.
     static bool OnScreen(const Vec2& pt, const Vec2& viewport) {
-        return pt.x >= 0.0f && pt.x <= viewport.x && pt.y >= 0.0f && pt.y <= viewport.y;
+        const OverlayTransform& t = GetOverlayTransform(viewport);
+        float left   = t.offset_x;
+        float top    = t.offset_y;
+        float right  = t.offset_x + viewport.x * t.scale_x;
+        float bottom = t.offset_y + viewport.y * t.scale_y;
+        return pt.x >= left && pt.x <= right && pt.y >= top && pt.y <= bottom;
     }
 
     void RenderChinaHatESP() {
