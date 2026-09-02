@@ -54,6 +54,9 @@
     <Filter Include="features\config">
       <UniqueIdentifier>{1A2B3C4D-4012-4222-8333-444455556666}</UniqueIdentifier>
     </Filter>
+    <Filter Include="obsidian">
+      <UniqueIdentifier>{1A2B3C4D-5001-4222-8333-444455556666}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -80,6 +83,10 @@
     <ClCompile Include="features\skybox_changer\skybox_changer.cpp"><Filter>features\skybox_changer</Filter></ClCompile>
     <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp"><Filter>features\hitbox_expander</Filter></ClCompile>
     <ClCompile Include="features\config\config.cpp"><Filter>features\config</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\glass.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\palette.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\theme.cpp"><Filter>obsidian</Filter></ClCompile>
+    <ClCompile Include="..\glass-obsidian\src\window.cpp"><Filter>obsidian</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="globals.h"><Filter>Header Files</Filter></ClInclude>
@@ -101,5 +108,11 @@
     <ClInclude Include="features\skybox_changer\skybox_changer.h"><Filter>features\skybox_changer</Filter></ClInclude>
     <ClInclude Include="features\hitbox_expander\hitbox_expander.h"><Filter>features\hitbox_expander</Filter></ClInclude>
     <ClInclude Include="features\config\config.h"><Filter>features\config</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\obsidian.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\detail.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\palette.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\theme.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\glass.h"><Filter>obsidian</Filter></ClInclude>
+    <ClInclude Include="..\glass-obsidian\include\obsidian\window.h"><Filter>obsidian</Filter></ClInclude>
   </ItemGroup>
 </Project>

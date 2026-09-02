@@ -24,7 +24,9 @@ DX11 + ImGui overlay on top.
    `roblox external\x64\Release\roblox external.exe` (project build).
 
 Requires the **Desktop development with C++** workload and the Windows 10/11 SDK.
-No package manager — ImGui (1.91.1) is vendored.
+No package manager — ImGui (1.91.1) is vendored, and the Glass Obsidian UI library
+(`../glass-obsidian`) is compiled straight into the project (the .vcxproj already
+lists its four `src/*.cpp` files and include path — nothing extra to set up).
 Libs linked: `d3d11 dxgi dwmapi shell32`.
 
 > ⚠️ Release builds with **AVX2** (`EnableEnhancedInstructionSet`). Needs a ~2013+ CPU.
@@ -74,8 +76,9 @@ korblox/rage, 3D ESP preview, mesh chams + memory mesh chams (see §5).
 ```
 roblox external/
   main.cpp        entry (WinMain), FeatureLoop thread, AttachLoop (auto-reconnect), render_ui()
-  overlay.hpp     overlay window, D3D11, ImGui init + theme, input thread, tray icon, taskbar window
-  menu.cpp        entire GUI: ui:: widgets, top tab bar + content well, all pages
+  overlay.hpp     overlay window, D3D11, ImGui init + obsidian theme/fonts, input thread, tray icon, taskbar window
+  menu.cpp        entire GUI, built on the Glass Obsidian library (../glass-obsidian):
+                  obsidian::ObsidianWindow (title bar, collapse, resize) + obsidian widgets
   globals.h       every setting as an inline global + LogLine() + g_request_exit
   memory.h/.cpp   RPM/WPM wrappers, instance struct, name/classname/children readers
   process.h/.cpp  FindRoblox(), GetRobloxWindow()
@@ -85,6 +88,12 @@ roblox external/
   features/       aimbot click_teleport config esp flight fov_changer
                   hitbox_expander infinite_jump inventory_checker noclip
                   skybox_changer walkspeed
+
+glass-obsidian/   the UI library the menu is now built on (ImGui public API only).
+                  The project compiles its four src/*.cpp files directly (see the
+                  .vcxproj) and puts include/ on the include path. Do NOT also
+                  compile its third_party/imgui - one ImGui per binary (the
+                  project's own imgui/ tree is the one that builds).
 ```
 
 ### Threads
@@ -307,6 +316,18 @@ Since the mesh backend was deleted, the project makes **no outbound network requ
 ## 10. Changelog (this branch)
 
 ```
+(wip)  GUI swapped to Glass Obsidian (../glass-obsidian): the hand-rolled ui::
+       toolkit, custom title bar, tab pill and window-sizing preamble are gone.
+       menu.cpp now drives one obsidian::ObsidianWindow (collapse-safe resize,
+       animated collapse, its own drag/resize) + the obsidian widget set
+       (Toggle/Slider/Combo/TextInput/TabBarIcons/KeyValue/panels). The ui page
+       still controls transparency / rounded corners / accent / rainbow - they
+       are folded into a live palette every frame - plus new accent presets.
+       Attach status moved to the title-bar subtitle; footer kept. Verified
+       headlessly: all 8 pages render + collapse/expand double-click through
+       real ImGui frames via the library's software rasteriser, zero asserts.
+       skybox names/count became inline header variables (const at namespace
+       scope has internal linkage - menu.cpp referencing them would not link).
 (wip)  UI restyled to the reference's exact glass recipe (Rose): animated
        accent backdrop + translucent Header.Fade->Surface.Fade gradient + quiet
        outline/shadow, flat Knob-colour controls (no glow/spark/catch-light);
