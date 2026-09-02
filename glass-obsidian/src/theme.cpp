@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <initializer_list>
 
 namespace obsidian {
@@ -22,8 +23,10 @@ ImFont* g_mono    = nullptr;
 bool FileExists(const char* path)
 {
     if (!path || !*path) return false;
-    if (FILE* f = fopen(path, "rb")) { fclose(f); return true; }
-    return false;
+    // std::ifstream rather than fopen: MSVC's /sdl turns fopen into a C4996
+    // error, and this stays fully portable across the headless builds.
+    std::ifstream f(path, std::ios::binary);
+    return f.good();
 }
 
 const char* FirstExisting(std::initializer_list<const char*> candidates)

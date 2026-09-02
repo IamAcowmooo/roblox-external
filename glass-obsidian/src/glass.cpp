@@ -75,7 +75,7 @@ float EaseOut(float t)
 
 float Pulse(float hz)
 {
-    return 0.5f + 0.5f * std::sin(ImGui::GetTime() * 6.2831853f * hz);
+    return 0.5f + 0.5f * static_cast<float>(std::sin(ImGui::GetTime() * 6.2831853f * hz));
 }
 } // namespace anim
 
@@ -1389,7 +1389,7 @@ bool TabBarImpl(const char* id, const char* const* labels, const IconDrawFn* ico
     StrokeEdge(d, bar_a, bar_b, Fade(p.edge, 0.45f), r);
 
     // sliding indicator
-    const int sel = FClamp(*selected, 0, count - 1);
+    const int sel = IClamp(*selected, 0, count - 1);   // int clamp (FClamp would narrow)
     int hov_idx = -1;
     for (int i = 0; i < count; ++i) if (slots[i].hov) hov_idx = i;
 
