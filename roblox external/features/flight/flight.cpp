@@ -175,10 +175,15 @@ namespace features {
             }
         }
 
-        // re-assert each tick so a respawn or a core script can't un-latch us
+        // RE-ASSERT PlatformStand and gravity EVERY tick without fail.
+        // This is critical - if we stop asserting, the humanoid state machine
+        // will re-enable gravity and override our velocity.
         if (is_valid_address(lp.humanoid_address))
             write<bool>(lp.humanoid_address + Offsets::Humanoid::PlatformStand, true);
         SetGravity(0.0f);
+
+        // Also disable CanCollide on all character parts every tick
+        SetCharacterCollision(false);
 
         instance cam = GetCamera();
         if (!cam.is_valid()) return;
@@ -206,10 +211,11 @@ namespace features {
             vel[2] = dir.z * flight_value;
         }
 
-        // the one write that reliably lands: drive velocity, let the solver move us.
+        // Drive velocity - PlatformStand + zero gravity ensures this sticks.
+        // Collisions are disabled (ghost mode) so the assembly solver has nothing
+        // to resolve against, and the velocity write is the one confirmed-stick write.
         write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
 
         float ang[3] = { 0, 0, 0 };
         write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, ang, sizeof(ang));
     }
-}

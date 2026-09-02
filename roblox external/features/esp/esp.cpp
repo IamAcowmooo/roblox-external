@@ -159,20 +159,35 @@ namespace features {
     // the character and shrink as they got further away.
     static void CanonicalPartSize(const char* name, Vec3& out) {
         if (!name) { out = { 1, 1, 1 }; return; }
+        // Exact name matches (confirmed via float probes for this client build)
         if (!strcmp(name, "Head"))                        { out = { 2, 1, 1 }; return; }
         if (!strcmp(name, "HumanoidRootPart"))            { out = { 2, 2, 1 }; return; }
         if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { out = { 2, 2, 1 }; return; }
         if (!strcmp(name, "LowerTorso"))                  { out = { 2, 1, 1 }; return; }
-        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
-            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
-            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
-        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
-            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
-            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
-        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand") ||
-            !strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
-        out = { 1, 1, 1 };
-    }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm"))  { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg"))  { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand")) { out = { 1, 1, 1 }; return; }
+        if (!strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
+        // Category-based fallback for any unrecognized part name.
+        // Roblox R6/R15 body parts follow predictable size patterns.
+        // Check for substrings that might appear on parts with unusual names.
+        if (name != nullptr) {
+            // R15 limb parts
+            if (strstr(name, "UpperArm") || strstr(name, "LowerArm")) { out = { 1, 2, 1 }; return; }
+            if (strstr(name, "UpperLeg") || strstr(name, "LowerLeg")) { out = { 1, 2, 1 }; return; }
+            // Hand/Foot variants
+            if (strstr(name, "Hand") || strstr(name, "Foot")) { out = { 1, 1, 1 }; return; }
+            // Head variant
+            if (strstr(name, "Head")) { out = { 2, 1, 1 }; return; }
+            // Torso variants
+            if (strstr(name, "Torso") || strstr(name, "UpperTorso") || strstr(name, "LowerTorso")) { out = { 2, 2, 1 }; return; }
+        }
+        // Default fallback - unit cube (better than zero-sized part collapsing)
+        out = { 1, 1, 1 };}
 
     // Wall check: segment-vs-AABB ray against the other players' cached parts.
     // (An external can't call the game's raycast and we don't have the world
@@ -758,8 +773,12 @@ namespace features {
                 struct { float rot[9]; Vec3 pos; } rp{};
                 if (!ReadRaw(prim + Offsets::Primitive::Rotation, &rp, sizeof(rp))) continue;
 
-                Vec3 sz{};
-                if (!ReadVec3(prim + Offsets::Primitive::Size, sz)) continue;
+                // Use canonical part size instead of reading Primitive::Size,
+                // which reads ~0 on this client and causes parts to collapse/
+                # float above the character. CanonicalPartSize uses known body-part
+                # dimensions that stay stable at distance.
+                Vec3 sz;
+                CanonicalPartSize(entity.part_names[i], sz);
 
                 float hx = sz.x * 0.5f, hy = sz.y * 0.5f, hz = sz.z * 0.5f;
 
