@@ -775,8 +775,8 @@ namespace features {
 
                 // Use canonical part size instead of reading Primitive::Size,
                 // which reads ~0 on this client and causes parts to collapse/
-                # float above the character. CanonicalPartSize uses known body-part
-                # dimensions that stay stable at distance.
+                // float above the character. CanonicalPartSize uses known body-part
+                // dimensions that stay stable at distance.
                 Vec3 sz;
                 CanonicalPartSize(entity.part_names[i], sz);
 

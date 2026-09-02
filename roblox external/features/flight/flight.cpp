@@ -219,3 +219,4 @@ namespace features {
         float ang[3] = { 0, 0, 0 };
         write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyAngularVelocity, ang, sizeof(ang));
     }
+}
