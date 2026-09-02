@@ -11,6 +11,7 @@
 #include "cache.h"
 #include "offsets.h"
 #include "game.h"
+#include "process.h"
 #include "imgui/imgui.h"
 
 namespace features {
@@ -140,6 +141,64 @@ namespace features {
         return true;
     }
 
+    // ---------------------------------------------------------------------
+    // Roblox renders into its window's CLIENT area, so everything WorldToScreen
+    // produces is in client-space pixels. Our ImGui overlay, however, is a
+    // full-screen window anchored at the desktop origin (0,0). If the game is
+    // windowed (or has a title bar / borders / is on a scaled display) the two
+    // coordinate systems differ by the client-area origin, plus a scale factor
+    // when the backbuffer Dimensions don't match the client rect in pixels.
+    //
+    // That offset is CONSTANT in pixels, which is exactly why the bug only
+    // looked broken "at long distance": up close the player fills a few hundred
+    // pixels so a ~30px vertical shift is barely noticeable, but far away the
+    // character is only a handful of pixels tall, so the same 30px shift parks
+    // the whole box/name above their head.
+    //
+    // Convert client-space -> desktop-space before drawing.
+    struct OverlayTransform {
+        float offset_x = 0.0f;
+        float offset_y = 0.0f;
+        float scale_x  = 1.0f;
+        float scale_y  = 1.0f;
+    };
+
+    static OverlayTransform cached_transform{};
+    static DWORD last_transform_lookup = 0;
+
+    static const OverlayTransform& GetOverlayTransform(const Vec2& viewport) {
+        DWORD now = GetTickCount();
+        // refresh often enough to follow window drags/resizes without hammering
+        // the win32 API every projected point.
+        if ((now - last_transform_lookup) < 250 && last_transform_lookup != 0)
+            return cached_transform;
+        last_transform_lookup = now;
+
+        OverlayTransform t{};
+        HWND rbx = process::GetRobloxWindow();
+        if (rbx) {
+            RECT client{};
+            POINT origin{ 0, 0 };
+            if (GetClientRect(rbx, &client) && ClientToScreen(rbx, &origin)) {
+                float client_w = (float)(client.right - client.left);
+                float client_h = (float)(client.bottom - client.top);
+                if (client_w > 0.0f && client_h > 0.0f) {
+                    t.offset_x = (float)origin.x;
+                    t.offset_y = (float)origin.y;
+                    // Dimensions is the render target size; if it differs from
+                    // the client rect (DPI scaling / resolution scaling) map
+                    // between them instead of assuming 1:1.
+                    if (viewport.x > 0.0f && viewport.y > 0.0f) {
+                        t.scale_x = client_w / viewport.x;
+                        t.scale_y = client_h / viewport.y;
+                    }
+                }
+            }
+        }
+        cached_transform = t;
+        return cached_transform;
+    }
+
     static bool WorldToScreen(const Vec3& world, Vec2& out, const Matrix4& view, const Vec2& viewport) {
         const float* m = view.data;
         float w_x = world.x * m[12] + world.y * m[13] + world.z * m[14] + m[15];
@@ -150,6 +209,11 @@ namespace features {
         out.x = (viewport.x * 0.5f * screen_x * inv_w) + (viewport.x * 0.5f);
         out.y = -(viewport.y * 0.5f * screen_y * inv_w) + (viewport.y * 0.5f);
         if (out.x != out.x || out.y != out.y) return false;
+
+        // client-space -> overlay/desktop-space
+        const OverlayTransform& t = GetOverlayTransform(viewport);
+        out.x = out.x * t.scale_x + t.offset_x;
+        out.y = out.y * t.scale_y + t.offset_y;
         return true;
     }
 
@@ -159,20 +223,35 @@ namespace features {
     // the character and shrink as they got further away.
     static void CanonicalPartSize(const char* name, Vec3& out) {
         if (!name) { out = { 1, 1, 1 }; return; }
+        // Exact name matches (confirmed via float probes for this client build)
         if (!strcmp(name, "Head"))                        { out = { 2, 1, 1 }; return; }
         if (!strcmp(name, "HumanoidRootPart"))            { out = { 2, 2, 1 }; return; }
         if (!strcmp(name, "Torso") || !strcmp(name, "UpperTorso")) { out = { 2, 2, 1 }; return; }
         if (!strcmp(name, "LowerTorso"))                  { out = { 2, 1, 1 }; return; }
-        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm")  ||
-            !strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")  ||
-            !strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
-        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg")  ||
-            !strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")  ||
-            !strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
-        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand") ||
-            !strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
-        out = { 1, 1, 1 };
-    }
+        if (!strcmp(name, "Left Arm")  || !strcmp(name, "Right Arm"))  { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftUpperArm")  || !strcmp(name, "RightUpperArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftLowerArm")  || !strcmp(name, "RightLowerArm")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "Left Leg")  || !strcmp(name, "Right Leg"))  { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftUpperLeg")  || !strcmp(name, "RightUpperLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftLowerLeg")  || !strcmp(name, "RightLowerLeg")) { out = { 1, 2, 1 }; return; }
+        if (!strcmp(name, "LeftHand") || !strcmp(name, "RightHand")) { out = { 1, 1, 1 }; return; }
+        if (!strcmp(name, "LeftFoot") || !strcmp(name, "RightFoot")) { out = { 1, 1, 1 }; return; }
+        // Category-based fallback for any unrecognized part name.
+        // Roblox R6/R15 body parts follow predictable size patterns.
+        // Check for substrings that might appear on parts with unusual names.
+        if (name != nullptr) {
+            // R15 limb parts
+            if (strstr(name, "UpperArm") || strstr(name, "LowerArm")) { out = { 1, 2, 1 }; return; }
+            if (strstr(name, "UpperLeg") || strstr(name, "LowerLeg")) { out = { 1, 2, 1 }; return; }
+            // Hand/Foot variants
+            if (strstr(name, "Hand") || strstr(name, "Foot")) { out = { 1, 1, 1 }; return; }
+            // Head variant
+            if (strstr(name, "Head")) { out = { 2, 1, 1 }; return; }
+            // Torso variants
+            if (strstr(name, "Torso") || strstr(name, "UpperTorso") || strstr(name, "LowerTorso")) { out = { 2, 2, 1 }; return; }
+        }
+        // Default fallback - unit cube (better than zero-sized part collapsing)
+        out = { 1, 1, 1 };}
 
     // Wall check: segment-vs-AABB ray against the other players' cached parts.
     // (An external can't call the game's raycast and we don't have the world
@@ -446,8 +525,16 @@ namespace features {
         }
     }
 
+    // NOTE: points coming out of WorldToScreen are already in overlay/desktop
+    // space, so the visible rect has to be transformed the same way rather than
+    // compared against the raw render dimensions.
     static bool OnScreen(const Vec2& pt, const Vec2& viewport) {
-        return pt.x >= 0.0f && pt.x <= viewport.x && pt.y >= 0.0f && pt.y <= viewport.y;
+        const OverlayTransform& t = GetOverlayTransform(viewport);
+        float left   = t.offset_x;
+        float top    = t.offset_y;
+        float right  = t.offset_x + viewport.x * t.scale_x;
+        float bottom = t.offset_y + viewport.y * t.scale_y;
+        return pt.x >= left && pt.x <= right && pt.y >= top && pt.y <= bottom;
     }
 
     void RenderChinaHatESP() {
@@ -758,8 +845,12 @@ namespace features {
                 struct { float rot[9]; Vec3 pos; } rp{};
                 if (!ReadRaw(prim + Offsets::Primitive::Rotation, &rp, sizeof(rp))) continue;
 
-                Vec3 sz{};
-                if (!ReadVec3(prim + Offsets::Primitive::Size, sz)) continue;
+                // Use canonical part size instead of reading Primitive::Size,
+                // which reads ~0 on this client and causes parts to collapse/
+                // float above the character. CanonicalPartSize uses known body-part
+                // dimensions that stay stable at distance.
+                Vec3 sz;
+                CanonicalPartSize(entity.part_names[i], sz);
 
                 float hx = sz.x * 0.5f, hy = sz.y * 0.5f, hz = sz.z * 0.5f;
 

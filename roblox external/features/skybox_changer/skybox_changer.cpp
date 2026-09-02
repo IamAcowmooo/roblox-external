@@ -39,6 +39,7 @@ namespace features {
     };
 
     static const SkyboxPreset k_skybox_presets[] = {
+
         {"Piss", "rbxassetid://2651437350", "rbxassetid://2651436979", "rbxassetid://2651436494", "rbxassetid://2651435990", "rbxassetid://2651432901", "rbxassetid://2651434974"},
         {"Peach", "rbxassetid://566616187", "rbxassetid://566616082", "rbxassetid://566616044", "rbxassetid://566616141", "rbxassetid://566616113", "rbxassetid://566616232"},
         {"Saku", "http://www.roblox.com/asset/?id=271077958", "http://www.roblox.com/asset/?id=271042467", "http://www.roblox.com/asset/?id=271042310", "http://www.roblox.com/asset/?id=271042556", "http://www.roblox.com/asset/?id=271042516", "http://www.roblox.com/asset/?id=271077243"},
@@ -64,13 +65,11 @@ namespace features {
         {"Nebulous", "rbxassetid://131036626982613", "rbxassetid://103716549795832", "rbxassetid://126542804346203", "rbxassetid://107665368823185", "rbxassetid://95020137072033", "rbxassetid://92862258103959"}
     };
 
-    const int k_skybox_count = sizeof(k_skybox_presets) / sizeof(k_skybox_presets[0]);
+    static_assert(sizeof(k_skybox_presets) / sizeof(k_skybox_presets[0]) == k_skybox_count,
+                  "k_skybox_names (skybox_changer.h) is out of sync with k_skybox_presets");
 
-    const char* const k_skybox_names[] = {
-        "Piss", "Peach", "Saku", "Purple", "Retro", "Space", "Sea", "Night V2",
-        "Dark", "Anime", "Beach", "Space V2", "Pink", "Rainbow", "Forest", "Night",
-        "Lava", "Rainy", "Green", "Volcanic", "Minecraft", "Lucid", "Nebulous"
-    };
+    // k_skybox_count / k_skybox_names now live in the header (inline) - the
+    // menu's combo reads them directly.
 
     static void cleanup_allocations() {
         our_allocations.clear();

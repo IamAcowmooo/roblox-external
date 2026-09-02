@@ -43,12 +43,7 @@ namespace overlay {
         if (inventory_checker_enabled) features::RenderInventoryChecker();
 
         if (g_state.menu_open) {
-            if (!g_state.centered_once) {
-                ImVec2 d = ImGui::GetIO().DisplaySize;
-                ImGui::SetNextWindowPos(ImVec2(d.x * 0.5f, d.y * 0.5f), ImGuiCond_Once, ImVec2(0.5f, 0.5f));
-                g_state.centered_once = true;
-            }
-            ImGui::SetNextWindowSize(ImVec2(520, 480), ImGuiCond_FirstUseEver);
+            // the obsidian window owns its own position/size/collapse state
             RenderMenu();
         }
     }

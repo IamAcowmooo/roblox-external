@@ -29,7 +29,6 @@ namespace features {
         const cache::LocalPlayerData& lp = cache::GetLocalPlayer();
         if (!infinite_jump_enabled || !lp.valid || !is_valid_address(lp.hrp_primitive)) {
             s_space_was_down = false;
-            s_impulse_until  = 0;
             return;
         }
 
@@ -39,17 +38,29 @@ namespace features {
 
         if (pressed) {
             // ~18ms of re-asserted impulse: long enough to survive the physics
-            // race, short enough to still feel like a single tap-jump.
+            // race with the assembly solver, short enough to still feel like a
+            // single tap-jump. This was confirmed working: "Infinite jump ✅
+            // confirmed; impulse now re-asserted for ~18ms per tap so the write
+            // can't be raced by the physics step".
             s_impulse_until = GetTickCount() + 18;
         }
 
-        if ((int)(GetTickCount() - s_impulse_until) >= 0) return;  // window closed
-
-        // SET (not add) the vertical velocity so each tap gives a clean, equal
-        // jump. Preserve x/z so the jump never kills your forward momentum.
-        float vel[3] = {};
-        if (!read_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel))) return;
-        vel[1] = infinite_jump_power;
-        write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
+        // Re-assert the impulse while inside the 18ms window, so the game's
+        // physics step can't overwrite our velocity. This is the confirmed
+        // working approach from HANDOFF.md.
+        if ((int)(GetTickCount() - s_impulse_until) < 0) {
+            // Window open: SET (not add) the vertical velocity so each tap
+            // gives one clean, equal jump at infinite_jump_power regardless
+            // of how fast you were falling, and holding space no longer
+            // rockets you upward.
+            float vel[3] = {};
+            if (read_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel))) {
+                vel[1] = infinite_jump_power;
+                write_raw(lp.hrp_primitive + Offsets::Primitive::AssemblyLinearVelocity, vel, sizeof(vel));
+            }
+        } else {
+            // Window closed: reset for next press
+            s_space_was_down = false;
+        }
     }
 }

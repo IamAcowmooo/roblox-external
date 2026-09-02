@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glass Obsidian — rendered proof</title>
+<style>
+  :root{
+    --bg:#05060a; --panel:#0a0e15; --edge:#2e384a; --text:#e8ecf4;
+    --dim:#99a2b4; --accent:#e9a13b; --accent2:#e2603f; --ok:#4ade80;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:
+      radial-gradient(900px 600px at 22% 18%, rgba(233,161,59,.10), transparent 60%),
+      radial-gradient(800px 560px at 80% 76%, rgba(226,96,63,.10), transparent 60%),
+      linear-gradient(#0b0d13, #05060a);
+    color:var(--text);
+    font:15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header{
+    padding:56px 24px 8px; text-align:center;
+  }
+  h1{
+    margin:0 0 6px; font-size:34px; letter-spacing:.02em;
+    background:linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  header p{margin:0 auto; max-width:760px; color:var(--dim)}
+  .stats{
+    display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:22px 0 8px;
+  }
+  .chip{
+    border:1px solid var(--edge); border-radius:999px; padding:5px 14px;
+    background:rgba(23,29,41,.7); font-size:12.5px; color:var(--dim);
+  }
+  .chip b{color:var(--text)}
+  main{max-width:1160px; margin:0 auto; padding:24px 20px 80px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(520px,1fr)); gap:26px}
+  figure{
+    margin:0; background:var(--panel); border:1px solid var(--edge);
+    border-radius:14px; overflow:hidden;
+    box-shadow:0 18px 40px rgba(0,0,0,.55);
+  }
+  figure img{display:block; width:100%; height:auto; background:#000}
+  figcaption{padding:12px 16px 14px; border-top:1px solid var(--edge)}
+  figcaption h3{margin:0 0 2px; font-size:14.5px}
+  figcaption p{margin:0; font-size:12.5px; color:var(--dim)}
+  .wide{grid-column:1/-1}
+  footer{color:var(--dim); text-align:center; font-size:12.5px; padding:0 20px 60px}
+  code{background:#131826; border:1px solid var(--edge); border-radius:5px; padding:1px 6px; font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Glass Obsidian</h1>
+  <p>A collapse-safe window class and a layered glass/obsidian theme for Dear ImGui 1.91.
+     Every image below is a real frame of the library, rendered headlessly (no GPU, no
+     window system) by the software rasteriser in <code>tools/soft_raster.h</code> and
+     written straight to PNG.</p>
+  <div class="stats">
+    <span class="chip"><b>13 / 13</b>&nbsp;resize &amp; collapse invariants pass</span>
+    <span class="chip"><b>13</b>&nbsp;screenshots at 1440×900</span>
+    <span class="chip">ImGui <b>1.91.1</b>, public API</span>
+    <span class="chip">4 accent presets · live opacity &amp; UI-scale</span>
+  </div>
+</header>
+<main>
+  <div class="grid">
+    <figure class="wide">
+      <img src="img/01-overview.jpg" alt="Overview tab">
+      <figcaption><h3>01 · Overview</h3>
+        <p>Hero panel with accent top-edge, stat cards with gradient meters, and two
+           fill-height columns. The window chrome, tab strip and panels are all
+           translucent — the bloom behind them is the ambient backdrop.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/02-components.jpg" alt="Components tab">
+      <figcaption><h3>02 · Components</h3>
+        <p>Toggles, gradient sliders, buttons, nested tabs, text inputs and combos —
+           all drawn as vector paths, no textures.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/03-palette.jpg" alt="Palette tab">
+      <figcaption><h3>03 · Palette studio</h3>
+        <p>Accent presets, live surface-opacity / UI-scale / corner-radius tuning, and
+           the ascending surface ramp with hex read-outs.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/04-window-bench.jpg" alt="Window bench">
+      <figcaption><h3>04 · Window bench</h3>
+        <p>The collapse/resize controls plus the live invariant suite results rendered
+           inside the UI itself.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/05-about.jpg" alt="About tab">
+      <figcaption><h3>05 · About</h3>
+        <p>Scope, guarantees and the exact recipe of the resize fix.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/06-collapsed.jpg" alt="Collapsed window">
+      <figcaption><h3>06 · Collapsed</h3>
+        <p>Settled state is exactly the title bar height; the body is not submitted at
+           all, so a collapsed overlay costs (almost) nothing.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/07-collapsing.jpg" alt="Mid-collapse animation">
+      <figcaption><h3>07 · Mid-collapse</h3>
+        <p>The morph frozen ~40% through: height, body clip and opacity are driven by
+           the same eased timeline.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-aurora.jpg" alt="Aurora preset">
+      <figcaption><h3>08 · Aurora preset @ 0.80 opacity</h3>
+        <p>Every token re-derived from one palette struct; translucency shows the
+           backdrop through the glass.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-verdant.jpg" alt="Verdant preset">
+      <figcaption><h3>08 · Verdant preset</h3><p>Same layout, different accent ramp.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-crimson.jpg" alt="Crimson preset">
+      <figcaption><h3>08 · Crimson preset</h3><p>Warm red accent, cooler glass.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/08-ember-thin.jpg" alt="Ember thin glass">
+      <figcaption><h3>08 · Ember, thin glass (0.62)</h3>
+        <p>Opacity floor test: text and hairlines follow a gentler alpha curve so the
+           UI stays legible as the glass thins.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/09-compact.jpg" alt="Compact width">
+      <figcaption><h3>09 · Compact 620 px</h3>
+        <p>Single-column fallback: every control still reachable at the shared minimum
+           width.</p></figcaption>
+    </figure>
+    <figure>
+      <img src="img/10-ui-scale-130.jpg" alt="UI scale 130%">
+      <figcaption><h3>10 · ui_scale 1.30</h3>
+        <p>Font atlas re-baked and window rescaled in place — nothing clips.</p></figcaption>
+    </figure>
+  </div>
+</main>
+<footer>
+  Rendered by <code>build/headless_tests out</code> · rasterised in software ·
+  Glass Obsidian is a UI library only — it contains no game-interaction code.
+</footer>
+</body>
+</html>

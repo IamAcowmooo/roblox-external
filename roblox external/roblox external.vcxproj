@@ -80,7 +80,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -107,7 +107,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -127,7 +127,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -154,7 +154,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)features;$(ProjectDir)imgui;$(ProjectDir)..\glass-obsidian\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -183,6 +183,10 @@
     <ClCompile Include="features\skybox_changer\skybox_changer.cpp" />
     <ClCompile Include="features\hitbox_expander\hitbox_expander.cpp" />
     <ClCompile Include="features\config\config.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\glass.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\palette.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\theme.cpp" />
+    <ClCompile Include="..\glass-obsidian\src\window.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_draw.cpp" />
     <ClCompile Include="imgui\imgui_tables.cpp" />
@@ -212,6 +216,12 @@
     <ClInclude Include="features\skybox_changer\skybox_changer.h" />
     <ClInclude Include="features\hitbox_expander\hitbox_expander.h" />
     <ClInclude Include="features\config\config.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\obsidian.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\detail.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\palette.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\theme.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\glass.h" />
+    <ClInclude Include="..\glass-obsidian\include\obsidian\window.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
